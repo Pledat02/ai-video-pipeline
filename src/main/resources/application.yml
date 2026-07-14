@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: ai-video-pipeline
+
+  # Mặc định H2 in-memory, chạy ngay không cần cài gì. Xem DB tại http://localhost:8080/h2-console
+  # Set DB_URL (VD: jdbc:postgresql://<host>:5432/postgres?sslmode=require) để chuyển sang Postgres/Supabase.
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:pipeline;DB_CLOSE_DELAY=-1}
+    username: ${DB_USERNAME:sa}
+    password: ${DB_PASSWORD:}
+  h2:
+    console:
+      enabled: true
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB   # cho phép upload nhiều ảnh 1 lần (slideshow)
+
+pipeline:
+  work-dir: ./pipeline-output   # nơi lưu file audio/video tạm
+  script-generation:
+    provider: ${SCRIPT_GENERATION_PROVIDER:stub}   # stub | claude | gemini
+    claude:
+      api-key: ${ANTHROPIC_API_KEY:}
+      model: ${CLAUDE_MODEL:claude-opus-4-8}
+      max-tokens: 4096
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-flash-lite-latest}
+      max-tokens: 4096
+  text-to-speech:
+    provider: ${TTS_PROVIDER:stub}   # stub | edge-tts
+    edge-tts:
+      executable: ${TTS_EXECUTABLE:edge-tts}
+      voice: ${TTS_VOICE:vi-VN-HoaiMyNeural}   # hoặc vi-VN-NamMinhNeural (giọng nam)
+  video-render:
+    provider: ${VIDEO_RENDER_PROVIDER:stub}   # stub | ffmpeg
+    ffmpeg:
+      executable: ${FFMPEG_EXECUTABLE:ffmpeg}
+      probe-executable: ${FFPROBE_EXECUTABLE:ffprobe}
+      resolution: ${FFMPEG_RESOLUTION:1280x720}
+      background-color: ${FFMPEG_BACKGROUND_COLOR:0x1a1a2e}
+      font-size: ${FFMPEG_FONT_SIZE:28}
+
+logging:
+  level:
+    com.aivideo.pipeline: DEBUG
