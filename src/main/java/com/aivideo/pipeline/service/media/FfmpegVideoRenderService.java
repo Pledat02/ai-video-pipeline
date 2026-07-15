@@ -58,7 +58,7 @@ public class FfmpegVideoRenderService implements VideoRenderService {
     }
 
     @Override
-    public Path render(Path audioPath, String script, Long jobId) {
+    public Path render(Path audioPath, String script, Long jobId, RenderOptions options) {
         try {
             Files.createDirectories(workDir);
             Path videoFile = workDir.resolve("job-" + jobId + "-video.mp4");
@@ -66,7 +66,10 @@ public class FfmpegVideoRenderService implements VideoRenderService {
             // khác không sinh subtitle, đơn giản là bỏ qua bước burn phụ đề.
             Path subtitleFile = workDir.resolve("job-" + jobId + "-subtitle.srt");
             List<Path> images = findImages(jobId);
-            boolean hasSubtitle = Files.exists(subtitleFile);
+            boolean hasSubtitle = options.subtitlesEnabled() && Files.exists(subtitleFile);
+            String outputResolution = resolutionFor(options.aspectRatio());
+            Path musicPath = options.musicPath();
+            boolean hasMusic = musicPath != null && Files.exists(musicPath);
             if (!hasSubtitle) {
                 log.warn("Job {} không tìm thấy file subtitle {}, render video không phụ đề", jobId, subtitleFile);
             }
@@ -84,13 +87,22 @@ public class FfmpegVideoRenderService implements VideoRenderService {
                 }
                 int audioInputIndex = images.size();
                 command.addAll(List.of("-i", audioPath.toString()));
+                int musicInputIndex = audioInputIndex + 1;
+                if (hasMusic) command.addAll(List.of("-stream_loop", "-1", "-i", musicPath.toString()));
 
                 command.add("-filter_complex");
-                command.add(buildSlideshowFilterComplex(images.size(), hasSubtitle, subtitleFile));
-                command.addAll(List.of("-map", "[outv]", "-map", audioInputIndex + ":a"));
+                String filters = buildSlideshowFilterComplex(images.size(), hasSubtitle, subtitleFile,
+                        outputResolution, "kenburns".equals(options.sceneMotion()));
+                if (hasMusic) filters += ";" + audioMixFilter(audioInputIndex, musicInputIndex, options.musicVolumePercent());
+                command.add(filters);
+                command.addAll(List.of("-map", "[outv]", "-map", hasMusic ? "[outa]" : audioInputIndex + ":a"));
             } else {
-                command.addAll(List.of("-f", "lavfi", "-i", "color=c=" + backgroundColor + ":s=" + resolution + ":r=25"));
+                command.addAll(List.of("-f", "lavfi", "-i", "color=c=" + backgroundColor + ":s=" + outputResolution + ":r=25"));
                 command.addAll(List.of("-i", audioPath.toString()));
+                if (hasMusic) {
+                    command.addAll(List.of("-stream_loop", "-1", "-i", musicPath.toString(), "-filter_complex",
+                            audioMixFilter(1, 2, options.musicVolumePercent()), "-map", "0:v", "-map", "[outa]"));
+                }
                 if (hasSubtitle) {
                     command.add("-vf");
                     command.add(subtitlesFilter(subtitleFile));
@@ -127,13 +139,16 @@ public class FfmpegVideoRenderService implements VideoRenderService {
      * demuxer (đã test thực tế: demuxer + "-r" output cho ra video dài hơn hẳn so
      * với tổng duration khai báo - sai lệch không dự đoán được).
      */
-    private String buildSlideshowFilterComplex(int imageCount, boolean hasSubtitle, Path subtitleFile) {
-        String[] dims = resolution.split("x");
+    private String buildSlideshowFilterComplex(int imageCount, boolean hasSubtitle, Path subtitleFile,
+            String outputResolution, boolean kenBurns) {
+        String[] dims = outputResolution.split("x");
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < imageCount; i++) {
             sb.append("[").append(i).append(":v]scale=").append(dims[0]).append(":").append(dims[1])
                     .append(":force_original_aspect_ratio=decrease,pad=").append(dims[0]).append(":").append(dims[1])
-                    .append(":(ow-iw)/2:(oh-ih)/2,setsar=1,fps=25[v").append(i).append("];");
+                    .append(":(ow-iw)/2:(oh-ih)/2,setsar=1,");
+            if (kenBurns) sb.append("zoompan=z='min(zoom+0.0008,1.12)':d=1:s=").append(outputResolution).append(":fps=25,");
+            sb.append("fps=25[v").append(i).append("];");
         }
         for (int i = 0; i < imageCount; i++) {
             sb.append("[v").append(i).append("]");
@@ -145,6 +160,21 @@ public class FfmpegVideoRenderService implements VideoRenderService {
             sb.append("[outv]");
         }
         return sb.toString();
+    }
+
+    private String audioMixFilter(int voiceIndex, int musicIndex, int volumePercent) {
+        double volume = Math.max(0, Math.min(volumePercent, 100)) / 100.0;
+        return "[" + musicIndex + ":a]volume=" + String.format(Locale.ROOT, "%.2f", volume)
+                + "[bg];[" + voiceIndex + ":a][bg]amix=inputs=2:duration=first:dropout_transition=2[outa]";
+    }
+
+    private String resolutionFor(String aspectRatio) {
+        return switch (aspectRatio == null ? "16:9" : aspectRatio) {
+            case "9:16" -> "720x1280";
+            case "1:1" -> "1080x1080";
+            case "4:5" -> "1080x1350";
+            default -> resolution;
+        };
     }
 
     private String subtitlesFilter(Path subtitleFile) {

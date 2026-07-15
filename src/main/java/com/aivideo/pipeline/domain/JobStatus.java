@@ -5,6 +5,7 @@ package com.aivideo.pipeline.domain;
  * Nếu bất kỳ bước nào lỗi -> FAILED (kèm errorMessage để debug).
  */
 public enum JobStatus {
+    GENERATING_IMAGES,
     PENDING,            // Vừa tạo, chờ sinh kịch bản
     SCRIPTING,          // Đang gọi LLM sinh kịch bản
     SCRIPT_READY,       // Kịch bản đã sinh xong, CHỜ NGƯỜI DUYỆT (bước bắt buộc!)

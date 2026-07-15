@@ -10,5 +10,5 @@ public interface ScriptGenerationService {
      * @param topic chủ đề video do người dùng nhập
      * @return nội dung kịch bản hoàn chỉnh (lời đọc cho video)
      */
-    String generateScript(String topic);
+    String generateScript(String topic, String sourceContent, Integer targetDurationSeconds, String language);
 }

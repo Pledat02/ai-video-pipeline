@@ -42,7 +42,10 @@ public class GeminiScriptGenerationService implements ScriptGenerationService {
     }
 
     @Override
-    public String generateScript(String topic) {
+    public String generateScript(String topic, String sourceContent, Integer targetDurationSeconds, String language) {
+        String duration = targetDurationSeconds == null ? "3-5 phút" : "khoảng " + targetDurationSeconds + " giây";
+        String material = sourceContent == null || sourceContent.isBlank() ? "" : "\nTư liệu nguồn cần bám sát:\n" + sourceContent;
+        topic = topic + "\nThời lượng mục tiêu: " + duration + "\nNgôn ngữ đầu ra: " + languageName(language) + material;
         Map<String, Object> requestBody = Map.of(
                 "systemInstruction", Map.of(
                         "parts", List.of(Map.of(
@@ -65,6 +68,11 @@ public class GeminiScriptGenerationService implements ScriptGenerationService {
                 .body(String.class);
 
         return extractText(rawResponse);
+    }
+
+    private String languageName(String code) {
+        return Map.of("vi", "Vietnamese", "en", "English", "ja", "Japanese", "ko", "Korean", "zh-CN", "Simplified Chinese")
+                .getOrDefault(code, "Vietnamese");
     }
 
     private String extractText(String rawResponse) {

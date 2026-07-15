@@ -40,11 +40,71 @@ public class VideoJobService {
 
     @Transactional
     public VideoJob createJob(CreateJobRequest request) {
+        return createJob(request, List.of(), null);
+    }
+
+    @Transactional
+    public VideoJob createJob(CreateJobRequest request, List<MultipartFile> files, MultipartFile musicFile) {
+        String topic = clean(request.topic());
+        String source = clean(request.sourceContent());
+        String script = clean(request.scriptContent());
+        if (topic == null && source == null && script == null && (files == null || files.isEmpty())) {
+            throw new IllegalArgumentException("Hãy nhập chủ đề, nội dung, kịch bản hoặc chọn ảnh");
+        }
+        if (request.targetDurationSeconds() != null &&
+                (request.targetDurationSeconds() < 15 || request.targetDurationSeconds() > 3600)) {
+            throw new IllegalArgumentException("Thời lượng phải từ 15 giây đến 60 phút");
+        }
         VideoJob job = new VideoJob();
-        job.setTopic(request.topic());
+        job.setTopic(topic != null ? topic : source != null ? abbreviate(source) : "Video từ ảnh");
+        job.setSourceContent(source);
+        job.setScriptContent(script);
+        job.setTargetDurationSeconds(request.targetDurationSeconds());
+        job.setVoice(clean(request.voice()));
+        job.setImageAgent(request.imageAgent() != null && Set.of("gemini", "mcp").contains(request.imageAgent()) ? request.imageAgent() : "none");
+        job.setImageCount(Math.max(1, Math.min(request.imageCount() == null ? 6 : request.imageCount(), 12)));
+        job.setLanguage(normalizeLanguage(request.language()));
+        job.setSpeechRatePercent(Math.max(-50, Math.min(request.speechRatePercent() == null ? 0 : request.speechRatePercent(), 100)));
+        job.setSubtitlesEnabled(request.subtitlesEnabled() == null || request.subtitlesEnabled());
+        job.setAspectRatio(request.aspectRatio() != null && Set.of("16:9", "9:16", "1:1", "4:5").contains(request.aspectRatio()) ? request.aspectRatio() : "16:9");
+        job.setImageStyle(clean(request.imageStyle()) == null ? "cinematic" : clean(request.imageStyle()));
+        job.setSceneMotion("kenburns".equals(request.sceneMotion()) ? "kenburns" : "none");
+        job.setMusicVolumePercent(Math.max(0, Math.min(request.musicVolumePercent() == null ? 18 : request.musicVolumePercent(), 100)));
+        if (script != null) job.setStatus(JobStatus.SCRIPT_READY);
         job = jobRepository.save(job);
+        if (files != null && !files.isEmpty()) uploadImages(job.getId(), files);
+        if (musicFile != null && !musicFile.isEmpty()) saveMusic(job.getId(), musicFile);
+        if (script != null) return job;
         orchestrator.generateScript(job.getId()); // chạy nền, trả response ngay
         return job;
+    }
+
+    private static String clean(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String abbreviate(String value) {
+        return value.length() <= 120 ? value : value.substring(0, 117) + "...";
+    }
+
+    private static String normalizeLanguage(String value) {
+        return value != null && Set.of("vi", "en", "ja", "ko", "zh-CN").contains(value) ? value : "vi";
+    }
+
+    private void saveMusic(Long jobId, MultipartFile file) {
+        String contentType = file.getContentType();
+        if (!Set.of("audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4").contains(contentType)) {
+            throw new IllegalArgumentException("Nhạc nền chỉ nhận MP3, WAV hoặc M4A");
+        }
+        String ext = contentType.contains("wav") ? "wav" : contentType.equals("audio/mp4") ? "m4a" : "mp3";
+        try {
+            Path dir = Path.of(workDir);
+            Files.createDirectories(dir);
+            for (String oldExt : List.of("mp3", "wav", "m4a")) Files.deleteIfExists(dir.resolve("job-" + jobId + "-music." + oldExt));
+            file.transferTo(dir.resolve("job-" + jobId + "-music." + ext));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Không lưu được nhạc nền", e);
+        }
     }
 
     public List<VideoJob> findAll() {
@@ -76,6 +136,22 @@ public class VideoJobService {
         return job;
     }
 
+    /**
+     * Sản xuất lại video cho job đã COMPLETED - dùng khi vừa upload ảnh mới hoặc
+     * muốn đổi giọng đọc/cấu hình render. Chạy lại từ bước TTS với kịch bản hiện có.
+     */
+    @Transactional
+    public VideoJob reproduce(Long id) {
+        VideoJob job = findById(id);
+        requireStatus(job, JobStatus.COMPLETED, "Chỉ sản xuất lại được job đã COMPLETED");
+        job.setErrorMessage(null);
+        job.setYoutubeVideoId(null);
+        job.setStatus(JobStatus.APPROVED);
+        job = jobRepository.save(job);
+        orchestrator.produceAndUpload(job.getId());
+        return job;
+    }
+
     /** Chạy lại job bị lỗi từ đầu giai đoạn sản xuất. */
     @Transactional
     public VideoJob retry(Long id) {
@@ -98,8 +174,10 @@ public class VideoJobService {
 
     /**
      * Upload nhiều ảnh cho 1 job -> FFmpeg dựng thành slideshow (chia đều thời lượng
-     * theo audio) khi render, thay vì nền màu đặc. Mỗi lần gọi thay thế toàn bộ bộ ảnh
-     * cũ, thứ tự lưu đúng theo thứ tự file trong request.
+     * theo audio) khi render, thay vì nền màu đặc. Mỗi lần gọi thay thế toàn bộ bộ ảnh cũ.
+     * Sắp xếp theo TÊN FILE gốc (không theo thứ tự trong request) vì trình duyệt gửi
+     * file theo thứ tự người dùng chọn trong file picker - không dự đoán được; đặt tên
+     * file 01-, 02-... là cách người dùng kiểm soát thứ tự slideshow.
      */
     public VideoJob uploadImages(Long id, List<MultipartFile> files) {
         VideoJob job = findById(id);
@@ -115,12 +193,17 @@ public class VideoJobService {
                 throw new IllegalArgumentException("Chỉ chấp nhận ảnh PNG, JPEG hoặc WebP");
             }
         }
+        List<MultipartFile> sorted = files.stream()
+                .sorted(java.util.Comparator.comparing(
+                        f -> f.getOriginalFilename() == null ? "" : f.getOriginalFilename(),
+                        String.CASE_INSENSITIVE_ORDER))
+                .toList();
         try {
             Path dir = Path.of(workDir);
             Files.createDirectories(dir);
             clearExistingImages(dir, id);
             int index = 1;
-            for (MultipartFile file : files) {
+            for (MultipartFile file : sorted) {
                 String ext = switch (file.getContentType()) {
                     case "image/png" -> "png";
                     case "image/webp" -> "webp";

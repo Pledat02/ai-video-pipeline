@@ -20,7 +20,7 @@ public class StubTextToSpeechService implements TextToSpeechService {
     }
 
     @Override
-    public Path synthesize(String script, Long jobId) {
+    public Path synthesize(String script, Long jobId, String voice, int ratePercent, boolean subtitlesEnabled) {
         try {
             Files.createDirectories(workDir);
             Path out = workDir.resolve("job-" + jobId + "-audio.txt");

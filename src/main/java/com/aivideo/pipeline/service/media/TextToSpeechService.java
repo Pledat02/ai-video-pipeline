@@ -14,5 +14,5 @@ public interface TextToSpeechService {
      * @param jobId   dùng để đặt tên file output
      * @return đường dẫn file audio (mp3/wav) đã sinh
      */
-    Path synthesize(String script, Long jobId);
+    Path synthesize(String script, Long jobId, String voice, int ratePercent, boolean subtitlesEnabled);
 }

@@ -15,5 +15,5 @@ public interface VideoRenderService {
      * @param jobId     đặt tên file output
      * @return đường dẫn file video mp4 hoàn chỉnh
      */
-    Path render(Path audioPath, String script, Long jobId);
+    Path render(Path audioPath, String script, Long jobId, RenderOptions options);
 }

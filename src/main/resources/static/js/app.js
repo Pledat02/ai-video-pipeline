@@ -10,6 +10,7 @@
     SCRIPT_READY: { label: "Chờ duyệt", cls: "warning", icon: "alert", progress: false },
     APPROVED: { label: "Đã duyệt", cls: "info", icon: "check", progress: false },
     GENERATING_AUDIO: { label: "Đang tạo giọng đọc", cls: "progress", icon: "spinner", progress: true, step: "tạo giọng đọc (TTS)" },
+    GENERATING_IMAGES: { label: "Đang tạo ảnh AI", cls: "progress", icon: "spinner", progress: true, step: "tạo ảnh minh hoạ" },
     RENDERING: { label: "Đang render video", cls: "progress", icon: "spinner", progress: true, step: "render video (FFmpeg)" },
     UPLOADING: { label: "Đang upload YouTube", cls: "progress", icon: "spinner", progress: true, step: "upload YouTube" },
     COMPLETED: { label: "Hoàn thành", cls: "success", icon: "check", progress: false },
@@ -22,6 +23,106 @@
     alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>',
     spinner: '<span class="spinner" aria-hidden="true"></span>',
   };
+
+  // ---------- Particle System ----------
+  function initParticles() {
+    const canvas = document.getElementById("particleCanvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let particles = [];
+    let animFrameId;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    function createParticle() {
+      return {
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: (Math.random() - 0.5) * 0.3,
+        size: Math.random() * 2 + 0.5,
+        opacity: Math.random() * 0.5 + 0.1,
+        hue: Math.random() > 0.7 ? 35 : (Math.random() > 0.5 ? 190 : 270), // gold, cyan, purple
+        pulse: Math.random() * Math.PI * 2,
+        pulseSpeed: Math.random() * 0.02 + 0.005,
+      };
+    }
+
+    function init() {
+      resize();
+      const count = Math.min(Math.floor((canvas.width * canvas.height) / 18000), 80);
+      particles = Array.from({ length: count }, createParticle);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.pulse += p.pulseSpeed;
+
+        // Wrap around
+        if (p.x < -10) p.x = canvas.width + 10;
+        if (p.x > canvas.width + 10) p.x = -10;
+        if (p.y < -10) p.y = canvas.height + 10;
+        if (p.y > canvas.height + 10) p.y = -10;
+
+        const pulseOpacity = p.opacity * (0.6 + 0.4 * Math.sin(p.pulse));
+
+        // Glow
+        ctx.beginPath();
+        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 4);
+        gradient.addColorStop(0, `hsla(${p.hue}, 80%, 70%, ${pulseOpacity * 0.4})`);
+        gradient.addColorStop(1, `hsla(${p.hue}, 80%, 70%, 0)`);
+        ctx.fillStyle = gradient;
+        ctx.arc(p.x, p.y, p.size * 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Core
+        ctx.beginPath();
+        ctx.fillStyle = `hsla(${p.hue}, 80%, 80%, ${pulseOpacity})`;
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw subtle connection lines between nearby particles
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 120) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(255, 183, 77, ${0.03 * (1 - dist / 120)})`;
+            ctx.lineWidth = 0.5;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      animFrameId = requestAnimationFrame(draw);
+    }
+
+    // Check for reduced motion preference
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!prefersReducedMotion) {
+      init();
+      draw();
+      window.addEventListener("resize", () => {
+        resize();
+        // Recreate particles on resize
+        const count = Math.min(Math.floor((canvas.width * canvas.height) / 18000), 80);
+        while (particles.length < count) particles.push(createParticle());
+        while (particles.length > count) particles.pop();
+      });
+    }
+  }
 
   // ---------- State ----------
   let jobs = [];
@@ -39,6 +140,24 @@
   const topicInput = document.getElementById("topicInput");
   const createJobBtn = document.getElementById("createJobBtn");
   const createJobError = document.getElementById("createJobError");
+  const advancedToggle = document.getElementById("advancedToggle");
+  const advancedOptions = document.getElementById("advancedOptions");
+  const sourceContentInput = document.getElementById("sourceContentInput");
+  const initialScriptInput = document.getElementById("initialScriptInput");
+  const durationInput = document.getElementById("durationInput");
+  const languageInput = document.getElementById("languageInput");
+  const voiceInput = document.getElementById("voiceInput");
+  const speechRateInput = document.getElementById("speechRateInput");
+  const subtitlesInput = document.getElementById("subtitlesInput");
+  const aspectRatioInput = document.getElementById("aspectRatioInput");
+  const sceneMotionInput = document.getElementById("sceneMotionInput");
+  const initialImagesInput = document.getElementById("initialImagesInput");
+  const initialImagePreview = document.getElementById("initialImagePreview");
+  const imageAgentInput = document.getElementById("imageAgentInput");
+  const imageCountInput = document.getElementById("imageCountInput");
+  const imageStyleInput = document.getElementById("imageStyleInput");
+  const musicInput = document.getElementById("musicInput");
+  const musicVolumeInput = document.getElementById("musicVolumeInput");
   const connectionStatus = document.getElementById("connectionStatus");
 
   const drawer = document.getElementById("drawer");
@@ -47,11 +166,13 @@
   const drawerJobId = document.getElementById("drawerJobId");
   const drawerTitle = document.getElementById("drawerTitle");
   const drawerTimestamp = document.getElementById("drawerTimestamp");
+  const drawerConfigSummary = document.getElementById("drawerConfigSummary");
   const drawerErrorBox = document.getElementById("drawerErrorBox");
   const drawerErrorText = document.getElementById("drawerErrorText");
   const drawerCompletedBox = document.getElementById("drawerCompletedBox");
   const drawerYoutubeId = document.getElementById("drawerYoutubeId");
   const drawerVideoPlayer = document.getElementById("drawerVideoPlayer");
+  const cinemaFrame = document.getElementById("cinemaFrame");
   const drawerProgressBox = document.getElementById("drawerProgressBox");
   const drawerProgressStep = document.getElementById("drawerProgressStep");
   const scriptTextarea = document.getElementById("scriptTextarea");
@@ -61,6 +182,20 @@
   const backgroundImageInput = document.getElementById("backgroundImageInput");
   const uploadBackgroundBtn = document.getElementById("uploadBackgroundBtn");
   const backgroundPreviewGrid = document.getElementById("backgroundPreviewGrid");
+
+  const VOICES = {
+    vi: [["vi-VN-HoaiMyNeural", "Hoài My · Nữ"], ["vi-VN-NamMinhNeural", "Nam Minh · Nam"]],
+    en: [["en-US-JennyNeural", "Jenny · Female"], ["en-US-GuyNeural", "Guy · Male"]],
+    ja: [["ja-JP-NanamiNeural", "Nanami · Nữ"], ["ja-JP-KeitaNeural", "Keita · Nam"]],
+    ko: [["ko-KR-SunHiNeural", "Sun Hi · Nữ"], ["ko-KR-InJoonNeural", "In Joon · Nam"]],
+    "zh-CN": [["zh-CN-XiaoxiaoNeural", "Xiaoxiao · Nữ"], ["zh-CN-YunxiNeural", "Yunxi · Nam"]],
+  };
+
+  function refreshVoiceOptions() {
+    voiceInput.innerHTML = VOICES[languageInput.value].map(([value, label]) =>
+      `<option value="${value}">${label}</option>`).join("");
+  }
+  languageInput.addEventListener("change", refreshVoiceOptions);
 
   // ---------- Utils ----------
   function badgeHtml(status) {
@@ -93,13 +228,19 @@
     toast.className = `toast${type !== "default" ? ` toast--${type}` : ""}`;
     toast.textContent = message;
     toastRegion.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(10px)";
+      toast.style.transition = "opacity 300ms ease, transform 300ms ease";
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
   }
 
   async function apiFetch(path, options) {
+    const isMultipart = options && options.body instanceof FormData;
     const res = await fetch(API_BASE + path, {
-      headers: { "Content-Type": "application/json" },
       ...options,
+      headers: isMultipart ? undefined : { "Content-Type": "application/json", ...(options && options.headers) },
     });
     let body = null;
     try { body = await res.json(); } catch (_) { /* no body */ }
@@ -115,13 +256,10 @@
     jobCountEl.textContent = String(jobs.length);
     emptyStateEl.hidden = jobs.length > 0;
     jobListEl.innerHTML = jobs
-      .map((job) => {
-        const preview = job.scriptContent
-          ? escapeHtml(job.scriptContent).slice(0, 90) + (job.scriptContent.length > 90 ? "…" : "")
-          : "";
+      .map((job, index) => {
         return `
         <li>
-          <button type="button" class="job-card" data-job-id="${job.id}">
+          <button type="button" class="job-card" data-job-id="${job.id}" style="animation-delay: ${index * 60}ms">
             <div class="job-card__main">
               <p class="job-card__topic">${escapeHtml(job.topic)}</p>
               <div class="job-card__meta">
@@ -149,6 +287,14 @@
     drawerJobId.textContent = job.id;
     drawerTitle.textContent = job.topic;
     drawerTimestamp.textContent = `Cập nhật ${relativeTime(job.updatedAt)}`;
+    const languageLabels = { vi: "Tiếng Việt", en: "English", ja: "日本語", ko: "한국어", "zh-CN": "中文" };
+    drawerConfigSummary.innerHTML = [
+      languageLabels[job.language] || "Tiếng Việt",
+      `${job.speechRatePercent >= 0 ? "+" : ""}${job.speechRatePercent || 0}% tốc độ`,
+      job.subtitlesEnabled === false ? "Không phụ đề" : "Có phụ đề",
+      job.aspectRatio || "16:9",
+      job.sceneMotion === "kenburns" ? "Ken Burns" : "Cảnh tĩnh",
+    ].map((item) => `<span>${escapeHtml(item)}</span>`).join("");
 
     const badgeContainer = drawer.querySelector(".drawer__meta");
     const oldBadge = badgeContainer.querySelector(".badge");
@@ -167,8 +313,10 @@
         drawerVideoPlayer.src = videoSrc;
         drawerVideoPlayer.dataset.jobId = String(job.id);
       }
+      cinemaFrame.hidden = false;
       drawerVideoPlayer.hidden = false;
     } else {
+      cinemaFrame.hidden = true;
       drawerVideoPlayer.hidden = true;
       drawerVideoPlayer.removeAttribute("src");
       drawerVideoPlayer.dataset.jobId = "";
@@ -201,13 +349,16 @@
     } else if (job.status === "FAILED") {
       const retryBtn = makeButton("danger", ICONS.clock, "Thử lại", () => retryJob(job.id));
       drawerActions.append(retryBtn);
+    } else if (job.status === "COMPLETED") {
+      const reproduceBtn = makeButton("secondary", ICONS.clock, "Sản xuất lại", () => reproduceJob(job.id));
+      drawerActions.append(reproduceBtn);
     }
   }
 
   function makeButton(variant, iconHtml, label, onClick) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = `btn btn--${variant}`;
+    btn.className = `btn btn--${variant} btn--3d`;
     btn.innerHTML = `${iconHtml}<span>${label}</span>`;
     btn.addEventListener("click", onClick);
     return btn;
@@ -246,13 +397,33 @@
   scriptTextarea.addEventListener("input", () => { scriptDirty = true; });
 
   // ---------- Actions ----------
-  async function createJob(topic) {
+  async function createJob() {
     createJobError.hidden = true;
     createJobBtn.disabled = true;
     try {
-      await apiFetch("", { method: "POST", body: JSON.stringify({ topic }) });
-      topicInput.value = "";
-      showToast("Đã tạo job, đang sinh kịch bản…", "success");
+      const hadScript = Boolean(initialScriptInput.value.trim());
+      const formData = new FormData();
+      formData.append("topic", topicInput.value.trim());
+      formData.append("sourceContent", sourceContentInput.value.trim());
+      formData.append("scriptContent", initialScriptInput.value.trim());
+      if (durationInput.value) formData.append("targetDurationSeconds", durationInput.value);
+      formData.append("voice", voiceInput.value);
+      formData.append("language", languageInput.value);
+      formData.append("speechRatePercent", speechRateInput.value);
+      formData.append("subtitlesEnabled", String(subtitlesInput.checked));
+      formData.append("aspectRatio", aspectRatioInput.value);
+      formData.append("sceneMotion", sceneMotionInput.value);
+      formData.append("imageAgent", imageAgentInput.value);
+      formData.append("imageCount", imageCountInput.value);
+      formData.append("imageStyle", imageStyleInput.value);
+      formData.append("musicVolumePercent", musicVolumeInput.value);
+      Array.from(initialImagesInput.files).forEach((file) => formData.append("files", file));
+      if (musicInput.files[0]) formData.append("musicFile", musicInput.files[0]);
+      await apiFetch("", { method: "POST", headers: {}, body: formData });
+      createForm.reset();
+      refreshVoiceOptions();
+      initialImagePreview.innerHTML = "";
+      showToast(hadScript ? "Đã tạo job, kịch bản sẵn sàng duyệt" : "Đã tạo job, đang sinh kịch bản…", "success");
       await fetchJobs(true);
     } catch (err) {
       createJobError.textContent = err.message;
@@ -261,6 +432,19 @@
       createJobBtn.disabled = false;
     }
   }
+
+  advancedToggle.addEventListener("click", () => {
+    const opening = advancedOptions.hidden;
+    advancedOptions.hidden = !opening;
+    advancedToggle.setAttribute("aria-expanded", String(opening));
+  });
+
+  initialImagesInput.addEventListener("change", () => {
+    const files = Array.from(initialImagesInput.files);
+    initialImagePreview.innerHTML = files.map((file, i) =>
+      `<div><img src="${URL.createObjectURL(file)}" alt="Ảnh ${i + 1}"><span>${i + 1}</span></div>`).join("");
+    if (files.length) imageAgentInput.value = "none";
+  });
 
   async function saveScript(jobId) {
     if (pendingAction) return;
@@ -300,6 +484,20 @@
     try {
       await apiFetch(`/${jobId}/retry`, { method: "POST" });
       showToast("Đang chạy lại job…", "success");
+      await fetchJobs(true);
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      pendingAction = false;
+    }
+  }
+
+  async function reproduceJob(jobId) {
+    if (pendingAction) return;
+    pendingAction = true;
+    try {
+      await apiFetch(`/${jobId}/reproduce`, { method: "POST" });
+      showToast("Đang sản xuất lại video với ảnh/cấu hình hiện tại…", "success");
       await fetchJobs(true);
     } catch (err) {
       showToast(err.message, "error");
@@ -353,15 +551,16 @@
 
   createForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    const topic = topicInput.value.trim();
-    if (!topic) {
-      createJobError.textContent = "Nhập chủ đề video trước đã";
+    const hasInput = topicInput.value.trim() || sourceContentInput.value.trim() ||
+      initialScriptInput.value.trim() || initialImagesInput.files.length;
+    if (!hasInput) {
+      createJobError.textContent = "Nhập chủ đề, nội dung, kịch bản hoặc chọn ít nhất một ảnh";
       createJobError.hidden = false;
       topicInput.focus();
       return;
     }
     createJobError.hidden = true;
-    createJob(topic);
+    createJob();
   });
 
   // ---------- Polling ----------
@@ -400,6 +599,7 @@
   }
 
   // ---------- Init ----------
+  initParticles();
   fetchJobs(true);
   startPolling();
 })();

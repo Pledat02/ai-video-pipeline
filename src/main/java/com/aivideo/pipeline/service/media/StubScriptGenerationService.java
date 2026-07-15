@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 public class StubScriptGenerationService implements ScriptGenerationService {
 
     @Override
-    public String generateScript(String topic) {
+    public String generateScript(String topic, String sourceContent, Integer targetDurationSeconds, String language) {
         return """
                 [KỊCH BẢN NHÁP - sinh bởi stub, tuần 3 sẽ thay bằng LLM thật]
 

@@ -37,6 +37,16 @@ pipeline:
     edge-tts:
       executable: ${TTS_EXECUTABLE:edge-tts}
       voice: ${TTS_VOICE:vi-VN-HoaiMyNeural}   # hoặc vi-VN-NamMinhNeural (giọng nam)
+  image-generation:
+    gemini:
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_IMAGE_MODEL:gemini-2.5-flash-image}
+    mcp:
+      server-url: ${MCP_IMAGE_SERVER_URL:}
+      tool-name: ${MCP_IMAGE_TOOL:generate_image}
+      auth-token: ${MCP_IMAGE_AUTH_TOKEN:}
+      timeout-seconds: ${MCP_IMAGE_TIMEOUT_SECONDS:180}
+      allow-remote: ${MCP_IMAGE_ALLOW_REMOTE:false}
   video-render:
     provider: ${VIDEO_RENDER_PROVIDER:stub}   # stub | ffmpeg
     ffmpeg:

@@ -39,21 +39,21 @@ public class EdgeTtsTextToSpeechService implements TextToSpeechService {
     }
 
     @Override
-    public Path synthesize(String script, Long jobId) {
+    public Path synthesize(String script, Long jobId, String selectedVoice, int ratePercent, boolean subtitlesEnabled) {
         try {
             Files.createDirectories(workDir);
             Path scriptFile = workDir.resolve("job-" + jobId + "-script.txt");
             Path audioFile = workDir.resolve("job-" + jobId + "-audio.mp3");
             Path subtitleFile = workDir.resolve("job-" + jobId + "-subtitle.srt");
+            Files.deleteIfExists(subtitleFile);
             Files.writeString(scriptFile, script, StandardCharsets.UTF_8);
 
-            List<String> command = List.of(
-                    executable,
-                    "-f", scriptFile.toString(),
-                    "-v", voice,
-                    "--write-media", audioFile.toString(),
-                    "--write-subtitles", subtitleFile.toString()
-            );
+            List<String> command = new java.util.ArrayList<>(List.of(
+                    executable, "-f", scriptFile.toString(),
+                    "-v", selectedVoice == null || selectedVoice.isBlank() ? voice : selectedVoice,
+                    "--rate", (ratePercent >= 0 ? "+" : "") + ratePercent + "%",
+                    "--write-media", audioFile.toString()));
+            if (subtitlesEnabled) command.addAll(List.of("--write-subtitles", subtitleFile.toString()));
 
             ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
             Process process = builder.start();

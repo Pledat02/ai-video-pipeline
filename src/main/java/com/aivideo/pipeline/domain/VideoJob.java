@@ -29,6 +29,37 @@ public class VideoJob {
     @Column(columnDefinition = "TEXT")
     private String scriptContent;
 
+    @Column(columnDefinition = "TEXT")
+    private String sourceContent;
+
+    private Integer targetDurationSeconds;
+
+    @Column(length = 100)
+    private String voice;
+
+    @Column(length = 30)
+    private String imageAgent = "none";
+
+    private Integer imageCount = 6;
+
+    @Column(length = 10)
+    private String language = "vi";
+
+    private Integer speechRatePercent = 0;
+
+    private Boolean subtitlesEnabled = true;
+
+    @Column(length = 10)
+    private String aspectRatio = "16:9";
+
+    @Column(length = 30)
+    private String imageStyle = "cinematic";
+
+    @Column(length = 30)
+    private String sceneMotion = "none";
+
+    private Integer musicVolumePercent = 18;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private JobStatus status = JobStatus.PENDING;

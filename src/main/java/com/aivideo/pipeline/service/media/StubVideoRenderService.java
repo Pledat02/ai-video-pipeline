@@ -20,7 +20,7 @@ public class StubVideoRenderService implements VideoRenderService {
     }
 
     @Override
-    public Path render(Path audioPath, String script, Long jobId) {
+    public Path render(Path audioPath, String script, Long jobId, RenderOptions options) {
         try {
             Path out = workDir.resolve("job-" + jobId + "-video.txt");
             // Stub: TUẦN 5-6 thay bằng FFmpeg thật.
