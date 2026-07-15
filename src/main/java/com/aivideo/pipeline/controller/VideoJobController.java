@@ -1,6 +1,7 @@
 package com.aivideo.pipeline.controller;
 
 import com.aivideo.pipeline.dto.CreateJobRequest;
+import com.aivideo.pipeline.dto.JobPageResponse;
 import com.aivideo.pipeline.dto.JobResponse;
 import com.aivideo.pipeline.dto.UpdateScriptRequest;
 import com.aivideo.pipeline.service.VideoJobService;
@@ -60,8 +61,10 @@ public class VideoJobController {
     }
 
     @GetMapping
-    public List<JobResponse> findAll() {
-        return jobService.findAll().stream().map(JobResponse::from).toList();
+    public JobPageResponse findAll(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return JobPageResponse.from(jobService.findAll(page, size));
     }
 
     @GetMapping("/{id}")

@@ -9,6 +9,8 @@ import com.aivideo.pipeline.exception.NotFoundException;
 import com.aivideo.pipeline.repository.VideoJobRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -107,8 +109,10 @@ public class VideoJobService {
         }
     }
 
-    public List<VideoJob> findAll() {
-        return jobRepository.findAllByOrderByCreatedAtDesc();
+    public Page<VideoJob> findAll(int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, Math.min(size, 50));
+        return jobRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(safePage, safeSize));
     }
 
     public VideoJob findById(Long id) {

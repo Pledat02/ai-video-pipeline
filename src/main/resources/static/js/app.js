@@ -131,10 +131,15 @@
   let scriptDirty = false;
   let pollTimer = null;
   let pendingAction = false;
+  let currentPage = 0;
+  const PAGE_SIZE = 10;
+  let totalPages = 1;
+  let totalElements = 0;
 
   // ---------- DOM refs ----------
   const jobListEl = document.getElementById("jobList");
   const jobCountEl = document.getElementById("jobCount");
+  const jobPaginationEl = document.getElementById("jobPagination");
   const emptyStateEl = document.getElementById("emptyState");
   const createForm = document.getElementById("createJobForm");
   const topicInput = document.getElementById("topicInput");
@@ -253,7 +258,7 @@
 
   // ---------- Rendering ----------
   function renderJobList() {
-    jobCountEl.textContent = String(jobs.length);
+    jobCountEl.textContent = String(totalElements);
     emptyStateEl.hidden = jobs.length > 0;
     jobListEl.innerHTML = jobs
       .map((job, index) => {
@@ -279,6 +284,33 @@
     jobListEl.querySelectorAll(".job-card").forEach((card) => {
       card.addEventListener("click", () => openDrawer(Number(card.dataset.jobId)));
     });
+
+    renderPagination();
+  }
+
+  function renderPagination() {
+    if (!jobPaginationEl) return;
+    if (totalPages <= 1) {
+      jobPaginationEl.innerHTML = "";
+      jobPaginationEl.hidden = true;
+      return;
+    }
+    jobPaginationEl.hidden = false;
+    jobPaginationEl.innerHTML = `
+      <button type="button" class="btn-icon" id="pagePrevBtn" ${currentPage <= 0 ? "disabled" : ""} aria-label="Trang trước">‹</button>
+      <span class="pagination__label">Trang ${currentPage + 1} / ${totalPages}</span>
+      <button type="button" class="btn-icon" id="pageNextBtn" ${currentPage >= totalPages - 1 ? "disabled" : ""} aria-label="Trang sau">›</button>
+    `;
+    const prevBtn = document.getElementById("pagePrevBtn");
+    const nextBtn = document.getElementById("pageNextBtn");
+    if (prevBtn) prevBtn.addEventListener("click", () => goToPage(currentPage - 1));
+    if (nextBtn) nextBtn.addEventListener("click", () => goToPage(currentPage + 1));
+  }
+
+  function goToPage(page) {
+    if (page < 0 || page >= totalPages || page === currentPage) return;
+    currentPage = page;
+    fetchJobs(true);
   }
 
   function refreshDrawerFrame(job) {
@@ -424,6 +456,7 @@
       refreshVoiceOptions();
       initialImagePreview.innerHTML = "";
       showToast(hadScript ? "Đã tạo job, kịch bản sẵn sàng duyệt" : "Đã tạo job, đang sinh kịch bản…", "success");
+      currentPage = 0;
       await fetchJobs(true);
     } catch (err) {
       createJobError.textContent = err.message;
@@ -566,11 +599,17 @@
   // ---------- Polling ----------
   async function fetchJobs(force = false) {
     try {
-      const data = await apiFetch("", { method: "GET" });
+      const data = await apiFetch(`?page=${currentPage}&size=${PAGE_SIZE}`, { method: "GET" });
       const signature = JSON.stringify(data);
       if (!force && signature === jobsSignature) return;
       jobsSignature = signature;
-      jobs = data;
+      jobs = data.content;
+      totalPages = Math.max(1, data.totalPages);
+      totalElements = data.totalElements;
+      if (currentPage > 0 && jobs.length === 0 && currentPage >= totalPages) {
+        currentPage = totalPages - 1;
+        return fetchJobs(true);
+      }
       renderJobList();
 
       if (selectedJobId != null) {

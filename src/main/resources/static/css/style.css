@@ -934,6 +934,31 @@ svg { width: 20px; height: 20px; flex-shrink: 0; }
   50% { box-shadow: 0 0 20px var(--progress-glow), 0 0 40px rgba(179, 136, 255, 0.08); }
 }
 
+/* ============ Pagination ============ */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+}
+
+.pagination[hidden] { display: none; }
+
+.pagination .btn-icon {
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.pagination__label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  min-width: 90px;
+  text-align: center;
+}
+
 /* ============ Empty state ============ */
 .empty-state {
   text-align: center;
