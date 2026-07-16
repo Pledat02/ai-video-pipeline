@@ -42,6 +42,9 @@
         </div>
       </div>
       <div class="topbar__right">
+        <a class="btn btn--secondary btn--3d" href="/characters.html">
+          <span aria-hidden="true">🎭</span><span>Nhân vật</span>
+        </a>
         <div class="topbar__status" id="connectionStatus" role="status" aria-live="polite">
           <span class="dot dot--ok" aria-hidden="true"></span>
           <span>Đang kết nối</span>
@@ -144,7 +147,13 @@
               </div>
               <div class="create-form__field">
                 <label for="sceneMotionInput">Chuyển động cảnh</label>
-                <select id="sceneMotionInput"><option value="none">Tĩnh / cắt cảnh</option><option value="kenburns">Ken Burns · zoom điện ảnh</option></select>
+                <select id="sceneMotionInput">
+                  <option value="none">Tĩnh / cắt cảnh</option>
+                  <option value="kenburns">Ken Burns · zoom điện ảnh</option>
+                  <option value="anime_sakuga">Anime Sakuga · đủ góc máy + chuyển cảnh</option>
+                  <option value="anime_tracking">Anime Tracking · bám ngang + orbital</option>
+                  <option value="anime_impact">Anime Impact · snap zoom + flash va chạm</option>
+                </select>
               </div>
               <div class="create-form__field create-form__field--wide">
                 <label for="initialImagesInput">Loạt ảnh cho video</label>
@@ -154,9 +163,15 @@
               <div class="create-form__field create-form__agent">
                 <label for="imageAgentInput">Agent tạo ảnh</label>
                 <select id="imageAgentInput">
+                  <option value="mcp" selected>Local MCP · ComfyUI / Custom Server</option>
                   <option value="none">Không dùng · dùng ảnh upload</option>
                   <option value="gemini">Gemini · tự tạo ảnh theo kịch bản</option>
-                  <option value="mcp">Local MCP · ComfyUI / Custom Server</option>
+                </select>
+              </div>
+              <div class="create-form__field">
+                <label for="characterInput">Nhân vật chính (tuỳ chọn)</label>
+                <select id="characterInput">
+                  <option value="">Không dùng nhân vật</option>
                 </select>
               </div>
               <div class="create-form__field">
@@ -167,7 +182,7 @@
                 <label for="imageStyleInput">Chất liệu hình ảnh</label>
                 <select id="imageStyleInput">
                   <option value="cinematic">Điện ảnh</option><option value="photorealistic">Chân thực / Đời thường</option>
-                  <option value="anime">Anime</option><option value="3D animation">Hoạt hình 3D</option>
+                  <option value="anime">Anime</option><option value="anime sakuga animatic">Anime Sakuga Animatic</option><option value="3D animation">Hoạt hình 3D</option>
                   <option value="2D illustration">Minh hoạ 2D</option><option value="documentary">Tài liệu</option>
                 </select>
               </div>
@@ -190,7 +205,7 @@
                 <label for="musicVolumeInput">Âm lượng nhạc nền</label>
                 <select id="musicVolumeInput"><option value="10">10% · Nhẹ</option><option value="18" selected>18% · Cân bằng</option><option value="30">30% · Rõ</option><option value="45">45% · Mạnh</option></select>
               </div>
-              <p class="create-form__note create-form__field--wide">Ảnh upload được sắp theo tên file. Gemini dùng API key; Local MCP dùng máy chủ đã cấu hình trong .env.</p>
+              <p class="create-form__note create-form__field--wide">Ảnh upload được sắp theo tên file. Gemini dùng API key; Local MCP dùng máy chủ đã cấu hình trong .env. Tạo nhân vật mới ở trang <a href="/characters.html">Thư viện nhân vật</a>.</p>
             </div>
             <p class="create-form__error" id="createJobError" role="alert" hidden></p>
           </form>
@@ -283,7 +298,10 @@
         </div>
         <div class="drawer__progress-info">
           <span class="spinner" aria-hidden="true"></span>
-          <p>Đang xử lý ở bước <strong id="drawerProgressStep"></strong>, tự làm mới...</p>
+          <div>
+            <p>Đang xử lý ở bước <strong id="drawerProgressStep"></strong>, tự làm mới...</p>
+            <p class="drawer__progress-eta" id="drawerProgressEta"></p>
+          </div>
         </div>
       </div>
 
@@ -348,14 +366,25 @@
           </div>
           <div class="create-form__field">
             <label for="reproSceneMotionInput">Chuyển động cảnh</label>
-            <select id="reproSceneMotionInput"><option value="none">Tĩnh / cắt cảnh</option><option value="kenburns">Ken Burns · zoom điện ảnh</option></select>
+            <select id="reproSceneMotionInput">
+              <option value="none">Tĩnh / cắt cảnh</option><option value="kenburns">Ken Burns · zoom điện ảnh</option>
+              <option value="anime_sakuga">Anime Sakuga · đủ góc máy + chuyển cảnh</option>
+              <option value="anime_tracking">Anime Tracking · bám ngang + orbital</option>
+              <option value="anime_impact">Anime Impact · snap zoom + flash va chạm</option>
+            </select>
           </div>
           <div class="create-form__field create-form__agent">
             <label for="reproImageAgentInput">Agent tạo ảnh</label>
             <select id="reproImageAgentInput">
+              <option value="mcp">Local MCP · ComfyUI / Custom Server</option>
               <option value="none">Không dùng · dùng ảnh upload</option>
               <option value="gemini">Gemini · tự tạo ảnh theo kịch bản</option>
-              <option value="mcp">Local MCP · ComfyUI / Custom Server</option>
+            </select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproCharacterInput">Nhân vật chính (tuỳ chọn)</label>
+            <select id="reproCharacterInput">
+              <option value="">Không dùng nhân vật</option>
             </select>
           </div>
           <div class="create-form__field">
@@ -366,7 +395,7 @@
             <label for="reproImageStyleInput">Chất liệu hình ảnh</label>
             <select id="reproImageStyleInput">
               <option value="cinematic">Điện ảnh</option><option value="photorealistic">Chân thực / Đời thường</option>
-              <option value="anime">Anime</option><option value="3D animation">Hoạt hình 3D</option>
+              <option value="anime">Anime</option><option value="anime sakuga animatic">Anime Sakuga Animatic</option><option value="3D animation">Hoạt hình 3D</option>
               <option value="2D illustration">Minh hoạ 2D</option><option value="documentary">Tài liệu</option>
             </select>
           </div>

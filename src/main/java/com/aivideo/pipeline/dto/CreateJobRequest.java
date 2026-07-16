@@ -7,6 +7,7 @@ public record CreateJobRequest(
         @Size(max = 500, message = "Chủ đề tối đa 500 ký tự") String topic,
         String sourceContent,
         String scriptContent,
+        Long characterId,
         Integer targetDurationSeconds,
         String voice,
         String imageAgent,

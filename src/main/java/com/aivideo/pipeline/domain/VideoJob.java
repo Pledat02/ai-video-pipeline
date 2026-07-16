@@ -32,13 +32,23 @@ public class VideoJob {
     @Column(columnDefinition = "TEXT")
     private String sourceContent;
 
+    /** Nhân vật được chọn từ thư viện (bảng characters), có thể null nếu không dùng. */
+    private Long characterId;
+
+    /** Snapshot mô tả nhân vật tại thời điểm chọn - chèn vào mọi prompt sinh ảnh
+     * và prompt sinh kịch bản để nhân vật xuất hiện nhất quán. Copy từ Character
+     * thay vì tham chiếu trực tiếp, để sửa nhân vật trong thư viện sau này không
+     * làm thay đổi ngược các job đã tạo trước đó. */
+    @Column(columnDefinition = "TEXT")
+    private String characterDescription;
+
     private Integer targetDurationSeconds;
 
     @Column(length = 100)
     private String voice;
 
     @Column(length = 30)
-    private String imageAgent = "none";
+    private String imageAgent = "mcp";
 
     private Integer imageCount = 6;
 

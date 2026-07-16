@@ -7,6 +7,7 @@ package com.aivideo.pipeline.dto;
  */
 public record ReproduceRequest(
         String voice,
+        Long characterId,
         String imageAgent,
         Integer imageCount,
         String language,

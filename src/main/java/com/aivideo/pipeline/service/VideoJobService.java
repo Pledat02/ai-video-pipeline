@@ -1,5 +1,6 @@
 package com.aivideo.pipeline.service;
 
+import com.aivideo.pipeline.domain.Character;
 import com.aivideo.pipeline.domain.JobStatus;
 import com.aivideo.pipeline.domain.VideoJob;
 import com.aivideo.pipeline.dto.CreateJobRequest;
@@ -20,8 +21,11 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Business logic + kiểm soát chuyển trạng thái hợp lệ.
@@ -37,6 +41,7 @@ public class VideoJobService {
 
     private final VideoJobRepository jobRepository;
     private final PipelineOrchestrator orchestrator;
+    private final CharacterService characterService;
 
     @Value("${pipeline.work-dir}")
     private String workDir;
@@ -62,16 +67,22 @@ public class VideoJobService {
         job.setTopic(topic != null ? topic : source != null ? abbreviate(source) : "Video từ ảnh");
         job.setSourceContent(source);
         job.setScriptContent(script);
+        if (request.characterId() != null) {
+            applyCharacter(job, request.characterId());
+        } else {
+            autoDetectCharacter(job, topic, source, script);
+        }
         job.setTargetDurationSeconds(request.targetDurationSeconds());
         job.setVoice(clean(request.voice()));
-        job.setImageAgent(request.imageAgent() != null && Set.of("gemini", "mcp").contains(request.imageAgent()) ? request.imageAgent() : "none");
+        job.setImageAgent(request.imageAgent() != null && Set.of("none", "gemini", "mcp").contains(request.imageAgent())
+                ? request.imageAgent() : "mcp");
         job.setImageCount(Math.max(1, Math.min(request.imageCount() == null ? 6 : request.imageCount(), 12)));
         job.setLanguage(normalizeLanguage(request.language()));
         job.setSpeechRatePercent(Math.max(-50, Math.min(request.speechRatePercent() == null ? 0 : request.speechRatePercent(), 100)));
         job.setSubtitlesEnabled(request.subtitlesEnabled() == null || request.subtitlesEnabled());
         job.setAspectRatio(request.aspectRatio() != null && Set.of("16:9", "9:16", "1:1", "4:5").contains(request.aspectRatio()) ? request.aspectRatio() : "16:9");
         job.setImageStyle(clean(request.imageStyle()) == null ? "cinematic" : clean(request.imageStyle()));
-        job.setSceneMotion("kenburns".equals(request.sceneMotion()) ? "kenburns" : "none");
+        job.setSceneMotion(normalizeSceneMotion(request.sceneMotion()));
         job.setMusicVolumePercent(Math.max(0, Math.min(request.musicVolumePercent() == null ? 18 : request.musicVolumePercent(), 100)));
         if (script != null) job.setStatus(JobStatus.SCRIPT_READY);
         job = jobRepository.save(job);
@@ -86,12 +97,82 @@ public class VideoJobService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    /** Gán nhân vật từ thư viện vào job - snapshot mô tả tại thời điểm chọn (xem
+     * javadoc VideoJob.characterDescription). Không làm gì nếu characterId null. */
+    private void applyCharacter(VideoJob job, Long characterId) {
+        if (characterId == null) return;
+        Character character = characterService.findById(characterId);
+        job.setCharacterId(character.getId());
+        job.setCharacterDescription(character.getDescription());
+    }
+
+    /** Không tính tới các thành phần tên ngắn hơn để tránh khớp nhầm với từ thường
+     * (VD tên "An" sẽ trùng vô số chỗ). Tên đầy đủ luôn được khớp bất kể độ dài. */
+    private static final int MIN_PARTIAL_NAME_LENGTH = 3;
+
+    /**
+     * Người dùng không chọn nhân vật trong dropdown nhưng có thể đã nhắc tên nhân vật
+     * trong chủ đề/tư liệu/kịch bản - quét thư viện, tên nào xuất hiện SỚM NHẤT trong
+     * văn bản thì gắn nhân vật đó (job hiện chỉ hỗ trợ 1 nhân vật). Khớp cả tên đầy đủ
+     * lẫn từng thành phần tên (VD "Raiku Hoshino" -> gõ "Raiku" hoặc "Hoshino" đều nhận),
+     * theo ranh giới từ và không phân biệt hoa thường. Không thấy thì job vẫn tạo bình
+     * thường không có nhân vật.
+     */
+    private void autoDetectCharacter(VideoJob job, String topic, String source, String script) {
+        String text = (topic == null ? "" : topic) + "\n"
+                + (source == null ? "" : source) + "\n"
+                + (script == null ? "" : script);
+        if (text.isBlank()) return;
+        Character earliest = null;
+        int earliestIndex = Integer.MAX_VALUE;
+        for (Character character : characterService.findAll()) {
+            int index = firstNameMatchIndex(text, character.getName());
+            if (index >= 0 && index < earliestIndex) {
+                earliestIndex = index;
+                earliest = character;
+            }
+        }
+        if (earliest != null) {
+            job.setCharacterId(earliest.getId());
+            job.setCharacterDescription(earliest.getDescription());
+        }
+    }
+
+    /** Vị trí xuất hiện sớm nhất của tên nhân vật (đầy đủ hoặc từng thành phần dài
+     * đủ) trong text, khớp theo ranh giới từ Unicode và không phân biệt hoa thường.
+     * Trả về -1 nếu không thấy. */
+    private static int firstNameMatchIndex(String text, String rawName) {
+        if (rawName == null || rawName.isBlank()) return -1;
+        String fullName = rawName.trim();
+        List<String> aliases = new ArrayList<>();
+        aliases.add(fullName);
+        for (String token : fullName.split("\\s+")) {
+            if (token.length() >= MIN_PARTIAL_NAME_LENGTH && !token.equalsIgnoreCase(fullName)) {
+                aliases.add(token);
+            }
+        }
+        int earliest = -1;
+        for (String alias : aliases) {
+            Matcher matcher = Pattern.compile("\\b" + Pattern.quote(alias) + "\\b",
+                    Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS).matcher(text);
+            if (matcher.find() && (earliest < 0 || matcher.start() < earliest)) {
+                earliest = matcher.start();
+            }
+        }
+        return earliest;
+    }
+
     private static String abbreviate(String value) {
         return value.length() <= 120 ? value : value.substring(0, 117) + "...";
     }
 
     private static String normalizeLanguage(String value) {
         return value != null && Set.of("vi", "en", "ja", "ko", "zh-CN").contains(value) ? value : "vi";
+    }
+
+    private static String normalizeSceneMotion(String value) {
+        return value != null && Set.of("kenburns", "anime_sakuga", "anime_tracking", "anime_impact").contains(value)
+                ? value : "none";
     }
 
     private void saveMusic(Long jobId, MultipartFile file) {
@@ -168,6 +249,7 @@ public class VideoJobService {
     private void applyReproduceOptions(VideoJob job, ReproduceRequest request) {
         if (request == null) return;
         if (clean(request.voice()) != null) job.setVoice(clean(request.voice()));
+        if (request.characterId() != null) applyCharacter(job, request.characterId());
         if (request.imageAgent() != null) {
             job.setImageAgent(Set.of("gemini", "mcp").contains(request.imageAgent()) ? request.imageAgent() : "none");
         }
@@ -179,7 +261,7 @@ public class VideoJobService {
             job.setAspectRatio(request.aspectRatio());
         }
         if (clean(request.imageStyle()) != null) job.setImageStyle(clean(request.imageStyle()));
-        if (request.sceneMotion() != null) job.setSceneMotion("kenburns".equals(request.sceneMotion()) ? "kenburns" : "none");
+        if (request.sceneMotion() != null) job.setSceneMotion(normalizeSceneMotion(request.sceneMotion()));
         if (request.musicVolumePercent() != null) job.setMusicVolumePercent(Math.max(0, Math.min(request.musicVolumePercent(), 100)));
     }
 

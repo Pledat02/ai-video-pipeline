@@ -43,9 +43,10 @@ public class VideoJobController {
             @RequestParam(required = false) String topic,
             @RequestParam(required = false) String sourceContent,
             @RequestParam(required = false) String scriptContent,
+            @RequestParam(required = false) Long characterId,
             @RequestParam(required = false) Integer targetDurationSeconds,
             @RequestParam(required = false) String voice,
-            @RequestParam(defaultValue = "none") String imageAgent,
+            @RequestParam(defaultValue = "mcp") String imageAgent,
             @RequestParam(defaultValue = "6") Integer imageCount,
             @RequestParam(defaultValue = "vi") String language,
             @RequestParam(defaultValue = "0") Integer speechRatePercent,
@@ -57,7 +58,7 @@ public class VideoJobController {
             @RequestParam(required = false) List<MultipartFile> files,
             @RequestParam(required = false) MultipartFile musicFile) {
         return JobResponse.from(jobService.createJob(new CreateJobRequest(topic, sourceContent, scriptContent,
-                targetDurationSeconds, voice, imageAgent, imageCount, language, speechRatePercent,
+                characterId, targetDurationSeconds, voice, imageAgent, imageCount, language, speechRatePercent,
                 subtitlesEnabled, aspectRatio, imageStyle, sceneMotion, musicVolumePercent), files, musicFile));
     }
 

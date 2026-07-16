@@ -33,7 +33,7 @@ class McpImageGenerationServiceTest {
             McpImageGenerationService service = new McpImageGenerationService(
                     mapper, RestClient.builder(), tempDir.toString(), url, "generate_image", "", false, 10);
 
-            service.generateImages("Test topic", "A short scene.", 1, 42L, "cinematic", "16:9");
+            service.generateImages("Test topic", "A short scene.", 1, 42L, "cinematic", "16:9", null);
 
             Path output = tempDir.resolve("job-42-image-1.png");
             assertThat(output).exists();

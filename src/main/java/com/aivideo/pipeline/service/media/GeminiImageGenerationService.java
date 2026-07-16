@@ -33,7 +33,8 @@ public class GeminiImageGenerationService implements ImageGenerationService {
     }
 
     @Override
-    public void generateImages(String topic, String script, int count, Long jobId, String imageStyle, String aspectRatio) {
+    public void generateImages(String topic, String script, int count, Long jobId, String imageStyle, String aspectRatio,
+            String characterDescription) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("Chưa có GEMINI_API_KEY để agent tạo ảnh hoạt động");
         }
@@ -42,10 +43,14 @@ public class GeminiImageGenerationService implements ImageGenerationService {
             String[] scenes = script.split("(?<=[.!?])\\s+|\\R+");
             RestClient client = restClientBuilder.baseUrl("https://generativelanguage.googleapis.com/v1beta")
                     .defaultHeader("x-goog-api-key", apiKey).build();
+            String characterNote = characterDescription == null || characterDescription.isBlank() ? ""
+                    : " Main character must look exactly the same in every image: " + characterDescription + ".";
             for (int i = 0; i < count; i++) {
                 String scene = scenes.length == 0 ? script : scenes[Math.min(i * scenes.length / count, scenes.length - 1)];
-                String prompt = "Create a " + imageStyle + " " + aspectRatio + " film still, no text, consistent characters and visual style. "
-                        + "Video topic: " + topic + ". Scene: " + scene;
+                String shotDirection = AnimeSakugaPreset.enabled(imageStyle)
+                        ? AnimeSakugaPreset.shotDirection(i, count) : "";
+                String prompt = "Create a " + imageStyle + " " + aspectRatio + " film still, no text, consistent characters and visual style."
+                        + characterNote + " Video topic: " + topic + ". Scene: " + scene + shotDirection;
                 Map<String, Object> body = Map.of(
                         "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
                         "generationConfig", Map.of("responseModalities", List.of("IMAGE")));

@@ -47,10 +47,13 @@ public class ClaudeScriptGenerationService implements ScriptGenerationService {
     }
 
     @Override
-    public String generateScript(String topic, String sourceContent, Integer targetDurationSeconds, String language) {
+    public String generateScript(String topic, String sourceContent, Integer targetDurationSeconds, String language,
+            String characterDescription) {
         String duration = targetDurationSeconds == null ? "3-5 phút" : "khoảng " + targetDurationSeconds + " giây";
         String material = sourceContent == null || sourceContent.isBlank() ? "" : "\nTư liệu nguồn cần bám sát:\n" + sourceContent;
-        topic = topic + "\nThời lượng mục tiêu: " + duration + "\nNgôn ngữ đầu ra: " + languageName(language) + material;
+        String character = characterDescription == null || characterDescription.isBlank() ? ""
+                : "\nNhân vật chính (nhắc tới nhất quán xuyên suốt): " + characterDescription;
+        topic = topic + "\nThời lượng mục tiêu: " + duration + "\nNgôn ngữ đầu ra: " + languageName(language) + material + character;
         Map<String, Object> requestBody = Map.of(
                 "model", model,
                 "max_tokens", maxTokens,

@@ -126,6 +126,7 @@
 
   // ---------- State ----------
   let jobs = [];
+  let characters = [];
   let jobsSignature = "";
   let selectedJobId = null;
   let scriptDirty = false;
@@ -159,6 +160,7 @@
   const initialImagesInput = document.getElementById("initialImagesInput");
   const initialImagePreview = document.getElementById("initialImagePreview");
   const imageAgentInput = document.getElementById("imageAgentInput");
+  const characterInput = document.getElementById("characterInput");
   const imageCountInput = document.getElementById("imageCountInput");
   const imageStyleInput = document.getElementById("imageStyleInput");
   const imageMoodInput = document.getElementById("imageMoodInput");
@@ -181,6 +183,7 @@
   const cinemaFrame = document.getElementById("cinemaFrame");
   const drawerProgressBox = document.getElementById("drawerProgressBox");
   const drawerProgressStep = document.getElementById("drawerProgressStep");
+  const drawerProgressEta = document.getElementById("drawerProgressEta");
   const scriptTextarea = document.getElementById("scriptTextarea");
   const scriptHint = document.getElementById("scriptHint");
   const drawerActions = document.getElementById("drawerActions");
@@ -197,6 +200,7 @@
   const reproAspectRatioInput = document.getElementById("reproAspectRatioInput");
   const reproSceneMotionInput = document.getElementById("reproSceneMotionInput");
   const reproImageAgentInput = document.getElementById("reproImageAgentInput");
+  const reproCharacterInput = document.getElementById("reproCharacterInput");
   const reproImageCountInput = document.getElementById("reproImageCountInput");
   const reproImageStyleInput = document.getElementById("reproImageStyleInput");
   const reproImageMoodInput = document.getElementById("reproImageMoodInput");
@@ -214,7 +218,7 @@
   // Chất liệu (media) và thể loại/tâm trạng (mood) là 2 chiều độc lập, ghép lại
   // thành 1 chuỗi prompt duy nhất khi gửi lên - cho phép kết hợp bất kỳ (VD:
   // "Chân thực" + "Kinh dị", hoặc "Minh hoạ 2D" + "Kinh dị").
-  const MEDIA_STYLES = ["cinematic", "photorealistic", "anime", "3D animation", "2D illustration", "documentary"];
+  const MEDIA_STYLES = ["cinematic", "photorealistic", "anime sakuga animatic", "anime", "3D animation", "2D illustration", "documentary"];
   const MOOD_STYLES = [
     "horror, dark eerie atmosphere, dramatic low-key lighting, deep shadows, unsettling grainy mood",
     "comedic, bright vibrant colors, playful exaggerated cartoon expressions, lighthearted whimsical mood",
@@ -239,6 +243,24 @@
     return { media: "cinematic", mood: MOOD_STYLES.includes(value) ? value : "" };
   }
 
+  // ---------- Character library ----------
+  async function loadCharacters() {
+    try {
+      const res = await fetch("/api/characters");
+      characters = await res.json();
+      const options = `<option value="">Không dùng nhân vật</option>` +
+        characters.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+      const prevCreate = characterInput.value;
+      const prevRepro = reproCharacterInput.value;
+      characterInput.innerHTML = options;
+      reproCharacterInput.innerHTML = options;
+      if (characters.some((c) => String(c.id) === prevCreate)) characterInput.value = prevCreate;
+      if (characters.some((c) => String(c.id) === prevRepro)) reproCharacterInput.value = prevRepro;
+    } catch (err) {
+      // thư viện nhân vật không tải được không nên chặn phần còn lại của dashboard
+    }
+  }
+
   function refreshVoiceOptions() {
     voiceInput.innerHTML = VOICES[languageInput.value].map(([value, label]) =>
       `<option value="${value}">${label}</option>`).join("");
@@ -251,6 +273,20 @@
   }
   reproLanguageInput.addEventListener("change", refreshReproVoiceOptions);
 
+  imageStyleInput.addEventListener("change", () => {
+    if (imageStyleInput.value === "anime sakuga animatic") {
+      sceneMotionInput.value = "anime_sakuga";
+      imageCountInput.value = "12";
+    }
+  });
+
+  reproImageStyleInput.addEventListener("change", () => {
+    if (reproImageStyleInput.value === "anime sakuga animatic") {
+      reproSceneMotionInput.value = "anime_sakuga";
+      reproImageCountInput.value = "12";
+    }
+  });
+
   function populateReproOptions(job) {
     reproLanguageInput.value = VOICES[job.language] ? job.language : "vi";
     refreshReproVoiceOptions();
@@ -260,8 +296,10 @@
     reproSpeechRateInput.value = String(job.speechRatePercent ?? 0);
     reproSubtitlesInput.checked = job.subtitlesEnabled !== false;
     reproAspectRatioInput.value = job.aspectRatio || "16:9";
-    reproSceneMotionInput.value = job.sceneMotion === "kenburns" ? "kenburns" : "none";
+    reproSceneMotionInput.value = [...reproSceneMotionInput.options].some((option) => option.value === job.sceneMotion)
+      ? job.sceneMotion : "none";
     reproImageAgentInput.value = job.imageAgent || "none";
+    reproCharacterInput.value = job.characterId ? String(job.characterId) : "";
     reproImageCountInput.value = job.imageCount || 6;
     const parsedStyle = parseImageStyle(job.imageStyle);
     reproImageStyleInput.value = parsedStyle.media;
@@ -287,6 +325,33 @@
     if (diffHour < 24) return `${diffHour} giờ trước`;
     const diffDay = Math.round(diffHour / 24);
     return `${diffDay} ngày trước`;
+  }
+
+  function estimateRemainingSeconds(job) {
+    if (!["GENERATING_IMAGES", "RENDERING"].includes(job.status)) return null;
+    const elapsed = Math.max(0, (Date.now() - new Date(job.updatedAt).getTime()) / 1000);
+    let expected;
+    if (job.status === "GENERATING_IMAGES") {
+      const perImage = job.imageAgent === "mcp" ? 55 : 35;
+      expected = 20 + Math.max(1, job.imageCount || 6) * perImage;
+    } else {
+      const duration = Math.max(15, job.targetDurationSeconds || 60);
+      const motionFactor = String(job.sceneMotion || "").startsWith("anime_") ? 0.9 : 0.5;
+      expected = 15 + duration * motionFactor + Math.max(1, job.imageCount || 6) * 2;
+    }
+    return Math.max(0, Math.round(expected - elapsed));
+  }
+
+  function etaLabel(job, compact = false) {
+    const seconds = estimateRemainingSeconds(job);
+    if (seconds == null) return "";
+    if (seconds <= 0) return compact ? "Sắp xong" : "Ước tính: sắp hoàn thành";
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    const duration = minutes > 0
+      ? `${minutes} phút${remainder ? ` ${remainder} giây` : ""}`
+      : `${remainder} giây`;
+    return compact ? `Còn khoảng ${duration}` : `Ước tính còn khoảng ${duration}`;
   }
 
   function escapeHtml(str) {
@@ -342,6 +407,7 @@
             </div>
             <div class="job-card__side">
               ${badgeHtml(job.status)}
+              ${etaLabel(job, true) ? `<small class="job-card__eta">${escapeHtml(etaLabel(job, true))}</small>` : ""}
             </div>
           </button>
         </li>`;
@@ -387,12 +453,14 @@
     drawerTitle.textContent = job.topic;
     drawerTimestamp.textContent = `Cập nhật ${relativeTime(job.updatedAt)}`;
     const languageLabels = { vi: "Tiếng Việt", en: "English", ja: "日本語", ko: "한국어", "zh-CN": "中文" };
+    const character = characters.find((c) => c.id === job.characterId);
     drawerConfigSummary.innerHTML = [
       languageLabels[job.language] || "Tiếng Việt",
       `${job.speechRatePercent >= 0 ? "+" : ""}${job.speechRatePercent || 0}% tốc độ`,
       job.subtitlesEnabled === false ? "Không phụ đề" : "Có phụ đề",
       job.aspectRatio || "16:9",
-      job.sceneMotion === "kenburns" ? "Ken Burns" : "Cảnh tĩnh",
+      ({ kenburns: "Ken Burns", anime_sakuga: "Anime Sakuga", anime_tracking: "Anime Tracking", anime_impact: "Anime Impact" })[job.sceneMotion] || "Cảnh tĩnh",
+      ...(character ? [`🎭 ${character.name}`] : []),
     ].map((item) => `<span>${escapeHtml(item)}</span>`).join("");
 
     const badgeContainer = drawer.querySelector(".drawer__meta");
@@ -428,7 +496,11 @@
     }
 
     drawerProgressBox.hidden = !meta.progress;
-    if (meta.progress) drawerProgressStep.textContent = meta.step;
+    if (meta.progress) {
+      drawerProgressStep.textContent = meta.step;
+      drawerProgressEta.textContent = etaLabel(job);
+      drawerProgressEta.hidden = !drawerProgressEta.textContent;
+    }
 
     if (!scriptDirty) {
       scriptTextarea.value = job.scriptContent || "";
@@ -520,16 +592,23 @@
       formData.append("aspectRatio", aspectRatioInput.value);
       formData.append("sceneMotion", sceneMotionInput.value);
       formData.append("imageAgent", imageAgentInput.value);
+      if (characterInput.value) formData.append("characterId", characterInput.value);
       formData.append("imageCount", imageCountInput.value);
       formData.append("imageStyle", composeImageStyle(imageStyleInput, imageMoodInput));
       formData.append("musicVolumePercent", musicVolumeInput.value);
       Array.from(initialImagesInput.files).forEach((file) => formData.append("files", file));
       if (musicInput.files[0]) formData.append("musicFile", musicInput.files[0]);
-      await apiFetch("", { method: "POST", headers: {}, body: formData });
+      const characterWasChosen = Boolean(characterInput.value);
+      const created = await apiFetch("", { method: "POST", headers: {}, body: formData });
       createForm.reset();
+      imageAgentInput.value = "mcp";
       refreshVoiceOptions();
       initialImagePreview.innerHTML = "";
       showToast(hadScript ? "Đã tạo job, kịch bản sẵn sàng duyệt" : "Đã tạo job, đang sinh kịch bản…", "success");
+      if (!characterWasChosen && created && created.characterId) {
+        const detected = characters.find((c) => c.id === created.characterId);
+        if (detected) showToast(`🎭 Tự nhận diện nhân vật "${detected.name}" từ nội dung`, "success");
+      }
       currentPage = 0;
       await fetchJobs(true);
     } catch (err) {
@@ -611,6 +690,7 @@
         aspectRatio: reproAspectRatioInput.value,
         sceneMotion: reproSceneMotionInput.value,
         imageAgent: reproImageAgentInput.value,
+        characterId: reproCharacterInput.value ? Number(reproCharacterInput.value) : null,
         imageCount: Number(reproImageCountInput.value),
         imageStyle: composeImageStyle(reproImageStyleInput, reproImageMoodInput),
         musicVolumePercent: Number(reproMusicVolumeInput.value),
@@ -687,7 +767,8 @@
     try {
       const data = await apiFetch(`?page=${currentPage}&size=${PAGE_SIZE}`, { method: "GET" });
       const signature = JSON.stringify(data);
-      if (!force && signature === jobsSignature) return;
+      const hasTimedStage = jobs.some((job) => ["GENERATING_IMAGES", "RENDERING"].includes(job.status));
+      if (!force && signature === jobsSignature && !hasTimedStage) return;
       jobsSignature = signature;
       jobs = data.content;
       totalPages = Math.max(1, data.totalPages);
@@ -725,6 +806,7 @@
 
   // ---------- Init ----------
   initParticles();
+  loadCharacters();
   fetchJobs(true);
   startPolling();
 })();

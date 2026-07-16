@@ -13,11 +13,11 @@ public class ImageAgentRouter {
     }
 
     public void generate(String provider, String topic, String script, int count, Long jobId,
-            String imageStyle, String aspectRatio) {
+            String imageStyle, String aspectRatio, String characterDescription) {
         ImageGenerationService service = providers.stream()
                 .filter(candidate -> candidate.provider().equalsIgnoreCase(provider))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Image agent chưa được hỗ trợ: " + provider));
-        service.generateImages(topic, script, count, jobId, imageStyle, aspectRatio);
+        service.generateImages(topic, script, count, jobId, imageStyle, aspectRatio, characterDescription);
     }
 }

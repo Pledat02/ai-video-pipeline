@@ -43,7 +43,8 @@ public class PipelineOrchestrator {
     public void generateScript(Long jobId) {
         try {
             VideoJob job = updateStatus(jobId, JobStatus.SCRIPTING);
-            String script = scriptService.generateScript(job.getTopic(), job.getSourceContent(), job.getTargetDurationSeconds(), job.getLanguage());
+            String script = scriptService.generateScript(job.getTopic(), job.getSourceContent(), job.getTargetDurationSeconds(),
+                    job.getLanguage(), job.getCharacterDescription());
             job.setScriptContent(script);
             job.setStatus(JobStatus.SCRIPT_READY);
             jobRepository.save(job);
@@ -68,7 +69,7 @@ public class PipelineOrchestrator {
                 jobRepository.save(job);
                 imageAgentRouter.generate(job.getImageAgent(), job.getTopic(), job.getScriptContent(),
                         job.getImageCount() == null ? 6 : job.getImageCount(), jobId,
-                        job.getImageStyle(), job.getAspectRatio());
+                        job.getImageStyle(), job.getAspectRatio(), job.getCharacterDescription());
             }
 
             job.setStatus(JobStatus.RENDERING);

@@ -59,7 +59,7 @@ public class McpImageGenerationService implements ImageGenerationService {
 
     @Override
     public void generateImages(String topic, String script, int count, Long jobId,
-            String imageStyle, String aspectRatio) {
+            String imageStyle, String aspectRatio, String characterDescription) {
         URI endpoint = validateEndpoint();
         try {
             Files.createDirectories(workDir);
@@ -67,10 +67,15 @@ public class McpImageGenerationService implements ImageGenerationService {
             sendInitialized(endpoint, sessionId);
             String[] scenes = script.split("(?<=[.!?])\\s+|\\R+");
             int[] dimensions = dimensions(aspectRatio);
+            String characterNote = characterDescription == null || characterDescription.isBlank() ? ""
+                    : " Main character must look exactly the same in every image: " + characterDescription + ".";
             for (int i = 0; i < count; i++) {
                 String scene = scenes.length == 0 ? script : scenes[Math.min(i * scenes.length / count, scenes.length - 1)];
+                String shotDirection = AnimeSakugaPreset.enabled(imageStyle)
+                        ? AnimeSakugaPreset.shotDirection(i, count) : "";
                 Map<String, Object> arguments = new LinkedHashMap<>();
-                arguments.put("prompt", "Create a " + imageStyle + " scene with consistent characters, no text. Topic: " + topic + ". Scene: " + scene);
+                arguments.put("prompt", "Create a " + imageStyle + " scene with consistent characters, no text."
+                        + characterNote + " Topic: " + topic + ". Scene: " + scene + shotDirection);
                 arguments.put("negativePrompt", "text, subtitles, watermark, logo, blurry, low quality");
                 arguments.put("width", dimensions[0]);
                 arguments.put("height", dimensions[1]);
