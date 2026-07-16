@@ -164,11 +164,22 @@
                 <input type="number" id="imageCountInput" min="1" max="12" value="6" />
               </div>
               <div class="create-form__field">
-                <label for="imageStyleInput">Phong cách hình ảnh</label>
+                <label for="imageStyleInput">Chất liệu hình ảnh</label>
                 <select id="imageStyleInput">
-                  <option value="cinematic">Điện ảnh</option><option value="photorealistic">Chân thực</option>
+                  <option value="cinematic">Điện ảnh</option><option value="photorealistic">Chân thực / Đời thường</option>
                   <option value="anime">Anime</option><option value="3D animation">Hoạt hình 3D</option>
                   <option value="2D illustration">Minh hoạ 2D</option><option value="documentary">Tài liệu</option>
+                </select>
+              </div>
+              <div class="create-form__field">
+                <label for="imageMoodInput">Thể loại / tâm trạng</label>
+                <select id="imageMoodInput">
+                  <option value="">Không có · trung tính</option>
+                  <option value="horror, dark eerie atmosphere, dramatic low-key lighting, deep shadows, unsettling grainy mood">Kinh dị</option>
+                  <option value="comedic, bright vibrant colors, playful exaggerated cartoon expressions, lighthearted whimsical mood">Hài hước</option>
+                  <option value="epic fantasy, majestic dramatic cinematic lighting, grand scale, richly detailed world">Giả tưởng sử thi</option>
+                  <option value="romantic, warm soft lighting, dreamy pastel tones, tender emotional mood">Lãng mạn</option>
+                  <option value="film noir mystery/thriller, moody low-key lighting, deep shadows, suspenseful tense atmosphere">Bí ẩn / Trinh thám</option>
                 </select>
               </div>
               <div class="create-form__field">
@@ -299,6 +310,82 @@
           </button>
         </div>
         <div class="bg-upload__preview-grid" id="backgroundPreviewGrid"></div>
+      </div>
+
+      <div class="drawer__section" id="reproduceOptionsSection" hidden>
+        <label class="drawer__label">Tuỳ chỉnh khi sản xuất lại</label>
+        <p class="drawer__hint">Đổi giọng đọc, ngôn ngữ, phụ đề, phong cách ảnh... rồi bấm "Sản xuất lại" bên dưới.</p>
+        <div class="create-form__advanced" style="margin-top: 8px;">
+          <div class="create-form__field">
+            <label for="reproLanguageInput">Ngôn ngữ</label>
+            <select id="reproLanguageInput">
+              <option value="vi">Tiếng Việt</option><option value="en">English</option>
+              <option value="ja">日本語 · Nhật</option><option value="ko">한국어 · Hàn</option>
+              <option value="zh-CN">中文 · Trung</option>
+            </select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproVoiceInput">Giọng đọc</label>
+            <select id="reproVoiceInput"></select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproSpeechRateInput">Tốc độ giọng đọc</label>
+            <select id="reproSpeechRateInput">
+              <option value="-25">0.75x · Chậm</option><option value="-10">0.9x</option>
+              <option value="0">1.0x · Bình thường</option><option value="15">1.15x</option>
+              <option value="30">1.3x · Nhanh</option><option value="50">1.5x</option>
+            </select>
+          </div>
+          <div class="create-form__field create-form__check">
+            <label><input type="checkbox" id="reproSubtitlesInput" /> Có phụ đề</label>
+          </div>
+          <div class="create-form__field">
+            <label for="reproAspectRatioInput">Tỷ lệ khung hình</label>
+            <select id="reproAspectRatioInput">
+              <option value="16:9">16:9 · YouTube</option><option value="9:16">9:16 · Shorts / TikTok</option>
+              <option value="1:1">1:1 · Vuông</option><option value="4:5">4:5 · Mạng xã hội</option>
+            </select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproSceneMotionInput">Chuyển động cảnh</label>
+            <select id="reproSceneMotionInput"><option value="none">Tĩnh / cắt cảnh</option><option value="kenburns">Ken Burns · zoom điện ảnh</option></select>
+          </div>
+          <div class="create-form__field create-form__agent">
+            <label for="reproImageAgentInput">Agent tạo ảnh</label>
+            <select id="reproImageAgentInput">
+              <option value="none">Không dùng · dùng ảnh upload</option>
+              <option value="gemini">Gemini · tự tạo ảnh theo kịch bản</option>
+              <option value="mcp">Local MCP · ComfyUI / Custom Server</option>
+            </select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproImageCountInput">Số ảnh AI</label>
+            <input type="number" id="reproImageCountInput" min="1" max="12" />
+          </div>
+          <div class="create-form__field">
+            <label for="reproImageStyleInput">Chất liệu hình ảnh</label>
+            <select id="reproImageStyleInput">
+              <option value="cinematic">Điện ảnh</option><option value="photorealistic">Chân thực / Đời thường</option>
+              <option value="anime">Anime</option><option value="3D animation">Hoạt hình 3D</option>
+              <option value="2D illustration">Minh hoạ 2D</option><option value="documentary">Tài liệu</option>
+            </select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproImageMoodInput">Thể loại / tâm trạng</label>
+            <select id="reproImageMoodInput">
+              <option value="">Không có · trung tính</option>
+              <option value="horror, dark eerie atmosphere, dramatic low-key lighting, deep shadows, unsettling grainy mood">Kinh dị</option>
+              <option value="comedic, bright vibrant colors, playful exaggerated cartoon expressions, lighthearted whimsical mood">Hài hước</option>
+              <option value="epic fantasy, majestic dramatic cinematic lighting, grand scale, richly detailed world">Giả tưởng sử thi</option>
+              <option value="romantic, warm soft lighting, dreamy pastel tones, tender emotional mood">Lãng mạn</option>
+              <option value="film noir mystery/thriller, moody low-key lighting, deep shadows, suspenseful tense atmosphere">Bí ẩn / Trinh thám</option>
+            </select>
+          </div>
+          <div class="create-form__field">
+            <label for="reproMusicVolumeInput">Âm lượng nhạc nền</label>
+            <select id="reproMusicVolumeInput"><option value="10">10% · Nhẹ</option><option value="18">18% · Cân bằng</option><option value="30">30% · Rõ</option><option value="45">45% · Mạnh</option></select>
+          </div>
+        </div>
       </div>
     </div>
 

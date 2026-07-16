@@ -52,7 +52,7 @@ public class VideoJob {
     @Column(length = 10)
     private String aspectRatio = "16:9";
 
-    @Column(length = 30)
+    @Column(length = 255)
     private String imageStyle = "cinematic";
 
     @Column(length = 30)

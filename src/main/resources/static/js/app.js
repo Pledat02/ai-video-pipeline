@@ -161,6 +161,7 @@
   const imageAgentInput = document.getElementById("imageAgentInput");
   const imageCountInput = document.getElementById("imageCountInput");
   const imageStyleInput = document.getElementById("imageStyleInput");
+  const imageMoodInput = document.getElementById("imageMoodInput");
   const musicInput = document.getElementById("musicInput");
   const musicVolumeInput = document.getElementById("musicVolumeInput");
   const connectionStatus = document.getElementById("connectionStatus");
@@ -188,6 +189,20 @@
   const uploadBackgroundBtn = document.getElementById("uploadBackgroundBtn");
   const backgroundPreviewGrid = document.getElementById("backgroundPreviewGrid");
 
+  const reproduceOptionsSection = document.getElementById("reproduceOptionsSection");
+  const reproLanguageInput = document.getElementById("reproLanguageInput");
+  const reproVoiceInput = document.getElementById("reproVoiceInput");
+  const reproSpeechRateInput = document.getElementById("reproSpeechRateInput");
+  const reproSubtitlesInput = document.getElementById("reproSubtitlesInput");
+  const reproAspectRatioInput = document.getElementById("reproAspectRatioInput");
+  const reproSceneMotionInput = document.getElementById("reproSceneMotionInput");
+  const reproImageAgentInput = document.getElementById("reproImageAgentInput");
+  const reproImageCountInput = document.getElementById("reproImageCountInput");
+  const reproImageStyleInput = document.getElementById("reproImageStyleInput");
+  const reproImageMoodInput = document.getElementById("reproImageMoodInput");
+  const reproMusicVolumeInput = document.getElementById("reproMusicVolumeInput");
+  let reproInitializedJobId = null;
+
   const VOICES = {
     vi: [["vi-VN-HoaiMyNeural", "Hoài My · Nữ"], ["vi-VN-NamMinhNeural", "Nam Minh · Nam"]],
     en: [["en-US-JennyNeural", "Jenny · Female"], ["en-US-GuyNeural", "Guy · Male"]],
@@ -196,11 +211,63 @@
     "zh-CN": [["zh-CN-XiaoxiaoNeural", "Xiaoxiao · Nữ"], ["zh-CN-YunxiNeural", "Yunxi · Nam"]],
   };
 
+  // Chất liệu (media) và thể loại/tâm trạng (mood) là 2 chiều độc lập, ghép lại
+  // thành 1 chuỗi prompt duy nhất khi gửi lên - cho phép kết hợp bất kỳ (VD:
+  // "Chân thực" + "Kinh dị", hoặc "Minh hoạ 2D" + "Kinh dị").
+  const MEDIA_STYLES = ["cinematic", "photorealistic", "anime", "3D animation", "2D illustration", "documentary"];
+  const MOOD_STYLES = [
+    "horror, dark eerie atmosphere, dramatic low-key lighting, deep shadows, unsettling grainy mood",
+    "comedic, bright vibrant colors, playful exaggerated cartoon expressions, lighthearted whimsical mood",
+    "epic fantasy, majestic dramatic cinematic lighting, grand scale, richly detailed world",
+    "romantic, warm soft lighting, dreamy pastel tones, tender emotional mood",
+    "film noir mystery/thriller, moody low-key lighting, deep shadows, suspenseful tense atmosphere",
+  ];
+
+  function composeImageStyle(mediaEl, moodEl) {
+    return [mediaEl.value, moodEl.value].filter(Boolean).join(", ");
+  }
+
+  function parseImageStyle(raw) {
+    const value = raw || "cinematic";
+    for (const media of MEDIA_STYLES) {
+      if (value === media) return { media, mood: "" };
+      if (value.startsWith(media + ", ")) {
+        const rest = value.slice(media.length + 2);
+        return { media, mood: MOOD_STYLES.includes(rest) ? rest : "" };
+      }
+    }
+    return { media: "cinematic", mood: MOOD_STYLES.includes(value) ? value : "" };
+  }
+
   function refreshVoiceOptions() {
     voiceInput.innerHTML = VOICES[languageInput.value].map(([value, label]) =>
       `<option value="${value}">${label}</option>`).join("");
   }
   languageInput.addEventListener("change", refreshVoiceOptions);
+
+  function refreshReproVoiceOptions() {
+    reproVoiceInput.innerHTML = VOICES[reproLanguageInput.value].map(([value, label]) =>
+      `<option value="${value}">${label}</option>`).join("");
+  }
+  reproLanguageInput.addEventListener("change", refreshReproVoiceOptions);
+
+  function populateReproOptions(job) {
+    reproLanguageInput.value = VOICES[job.language] ? job.language : "vi";
+    refreshReproVoiceOptions();
+    if (job.voice && [...reproVoiceInput.options].some((o) => o.value === job.voice)) {
+      reproVoiceInput.value = job.voice;
+    }
+    reproSpeechRateInput.value = String(job.speechRatePercent ?? 0);
+    reproSubtitlesInput.checked = job.subtitlesEnabled !== false;
+    reproAspectRatioInput.value = job.aspectRatio || "16:9";
+    reproSceneMotionInput.value = job.sceneMotion === "kenburns" ? "kenburns" : "none";
+    reproImageAgentInput.value = job.imageAgent || "none";
+    reproImageCountInput.value = job.imageCount || 6;
+    const parsedStyle = parseImageStyle(job.imageStyle);
+    reproImageStyleInput.value = parsedStyle.media;
+    reproImageMoodInput.value = parsedStyle.mood;
+    reproMusicVolumeInput.value = String(job.musicVolumePercent ?? 18);
+  }
 
   // ---------- Utils ----------
   function badgeHtml(status) {
@@ -347,11 +414,17 @@
       }
       cinemaFrame.hidden = false;
       drawerVideoPlayer.hidden = false;
+      reproduceOptionsSection.hidden = false;
+      if (reproInitializedJobId !== job.id) {
+        populateReproOptions(job);
+        reproInitializedJobId = job.id;
+      }
     } else {
       cinemaFrame.hidden = true;
       drawerVideoPlayer.hidden = true;
       drawerVideoPlayer.removeAttribute("src");
       drawerVideoPlayer.dataset.jobId = "";
+      reproduceOptionsSection.hidden = true;
     }
 
     drawerProgressBox.hidden = !meta.progress;
@@ -413,6 +486,7 @@
   function closeDrawer() {
     selectedJobId = null;
     scriptDirty = false;
+    reproInitializedJobId = null;
     drawer.hidden = true;
     drawerBackdrop.hidden = true;
     document.body.style.overflow = "";
@@ -447,7 +521,7 @@
       formData.append("sceneMotion", sceneMotionInput.value);
       formData.append("imageAgent", imageAgentInput.value);
       formData.append("imageCount", imageCountInput.value);
-      formData.append("imageStyle", imageStyleInput.value);
+      formData.append("imageStyle", composeImageStyle(imageStyleInput, imageMoodInput));
       formData.append("musicVolumePercent", musicVolumeInput.value);
       Array.from(initialImagesInput.files).forEach((file) => formData.append("files", file));
       if (musicInput.files[0]) formData.append("musicFile", musicInput.files[0]);
@@ -529,8 +603,20 @@
     if (pendingAction) return;
     pendingAction = true;
     try {
-      await apiFetch(`/${jobId}/reproduce`, { method: "POST" });
-      showToast("Đang sản xuất lại video với ảnh/cấu hình hiện tại…", "success");
+      const body = {
+        language: reproLanguageInput.value,
+        voice: reproVoiceInput.value,
+        speechRatePercent: Number(reproSpeechRateInput.value),
+        subtitlesEnabled: reproSubtitlesInput.checked,
+        aspectRatio: reproAspectRatioInput.value,
+        sceneMotion: reproSceneMotionInput.value,
+        imageAgent: reproImageAgentInput.value,
+        imageCount: Number(reproImageCountInput.value),
+        imageStyle: composeImageStyle(reproImageStyleInput, reproImageMoodInput),
+        musicVolumePercent: Number(reproMusicVolumeInput.value),
+      };
+      await apiFetch(`/${jobId}/reproduce`, { method: "POST", body: JSON.stringify(body) });
+      showToast("Đang sản xuất lại video với cấu hình mới…", "success");
       await fetchJobs(true);
     } catch (err) {
       showToast(err.message, "error");

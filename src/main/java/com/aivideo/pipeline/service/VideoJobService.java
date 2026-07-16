@@ -3,6 +3,7 @@ package com.aivideo.pipeline.service;
 import com.aivideo.pipeline.domain.JobStatus;
 import com.aivideo.pipeline.domain.VideoJob;
 import com.aivideo.pipeline.dto.CreateJobRequest;
+import com.aivideo.pipeline.dto.ReproduceRequest;
 import com.aivideo.pipeline.dto.UpdateScriptRequest;
 import com.aivideo.pipeline.exception.InvalidStateException;
 import com.aivideo.pipeline.exception.NotFoundException;
@@ -142,18 +143,44 @@ public class VideoJobService {
 
     /**
      * Sản xuất lại video cho job đã COMPLETED - dùng khi vừa upload ảnh mới hoặc
-     * muốn đổi giọng đọc/cấu hình render. Chạy lại từ bước TTS với kịch bản hiện có.
+     * muốn đổi giọng đọc/ngôn ngữ/tốc độ/phụ đề/phong cách ảnh/cấu hình render.
+     * Chạy lại từ bước TTS với kịch bản hiện có; field nào trong request bị bỏ
+     * trống (null) thì giữ nguyên giá trị đang lưu trên job.
+     * KHÔNG @Transactional: orchestrator.produceAndUpload chạy @Async ở thread khác
+     * và đọc lại job từ DB ngay lập tức - nếu bọc trong 1 transaction ở đây, save()
+     * chưa commit kịp thì thread async sẽ đọc phải dữ liệu cũ (mất các option vừa đổi).
+     * jobRepository.save() tự commit ngay trong lời gọi của chính nó khi không có
+     * transaction bao ngoài, nên bỏ @Transactional đảm bảo dữ liệu mới đã commit
+     * trước khi produceAndUpload được gọi.
      */
-    @Transactional
-    public VideoJob reproduce(Long id) {
+    public VideoJob reproduce(Long id, ReproduceRequest request) {
         VideoJob job = findById(id);
         requireStatus(job, JobStatus.COMPLETED, "Chỉ sản xuất lại được job đã COMPLETED");
+        applyReproduceOptions(job, request);
         job.setErrorMessage(null);
         job.setYoutubeVideoId(null);
         job.setStatus(JobStatus.APPROVED);
         job = jobRepository.save(job);
         orchestrator.produceAndUpload(job.getId());
         return job;
+    }
+
+    private void applyReproduceOptions(VideoJob job, ReproduceRequest request) {
+        if (request == null) return;
+        if (clean(request.voice()) != null) job.setVoice(clean(request.voice()));
+        if (request.imageAgent() != null) {
+            job.setImageAgent(Set.of("gemini", "mcp").contains(request.imageAgent()) ? request.imageAgent() : "none");
+        }
+        if (request.imageCount() != null) job.setImageCount(Math.max(1, Math.min(request.imageCount(), 12)));
+        if (request.language() != null) job.setLanguage(normalizeLanguage(request.language()));
+        if (request.speechRatePercent() != null) job.setSpeechRatePercent(Math.max(-50, Math.min(request.speechRatePercent(), 100)));
+        if (request.subtitlesEnabled() != null) job.setSubtitlesEnabled(request.subtitlesEnabled());
+        if (request.aspectRatio() != null && Set.of("16:9", "9:16", "1:1", "4:5").contains(request.aspectRatio())) {
+            job.setAspectRatio(request.aspectRatio());
+        }
+        if (clean(request.imageStyle()) != null) job.setImageStyle(clean(request.imageStyle()));
+        if (request.sceneMotion() != null) job.setSceneMotion("kenburns".equals(request.sceneMotion()) ? "kenburns" : "none");
+        if (request.musicVolumePercent() != null) job.setMusicVolumePercent(Math.max(0, Math.min(request.musicVolumePercent(), 100)));
     }
 
     /** Chạy lại job bị lỗi từ đầu giai đoạn sản xuất. */

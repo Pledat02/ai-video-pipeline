@@ -3,6 +3,7 @@ package com.aivideo.pipeline.controller;
 import com.aivideo.pipeline.dto.CreateJobRequest;
 import com.aivideo.pipeline.dto.JobPageResponse;
 import com.aivideo.pipeline.dto.JobResponse;
+import com.aivideo.pipeline.dto.ReproduceRequest;
 import com.aivideo.pipeline.dto.UpdateScriptRequest;
 import com.aivideo.pipeline.service.VideoJobService;
 import jakarta.validation.Valid;
@@ -94,7 +95,7 @@ public class VideoJobController {
     }
 
     @PostMapping("/{id}/reproduce")
-    public JobResponse reproduce(@PathVariable Long id) {
-        return JobResponse.from(jobService.reproduce(id));
+    public JobResponse reproduce(@PathVariable Long id, @RequestBody(required = false) ReproduceRequest request) {
+        return JobResponse.from(jobService.reproduce(id, request));
     }
 }
