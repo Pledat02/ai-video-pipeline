@@ -52,7 +52,8 @@ public class GeminiImageGenerationService implements ImageGenerationService {
                 String shotDirection = AnimeSakugaPreset.enabled(imageStyle)
                         ? AnimeSakugaPreset.shotDirection(i, count) : "";
                 String prompt = "Create a " + imageStyle + " " + aspectRatio + " film still, no text, consistent characters and visual style."
-                        + SINGLE_FRAME_RULE + characterNote + " Video topic: " + topic + ". Scene: " + scene + shotDirection;
+                        + SINGLE_FRAME_RULE + characterNote + " Video topic: " + topic + ". Scene: " + scene
+                        + SceneEmotionAnalyzer.cue(scene) + shotDirection;
                 Map<String, Object> body = Map.of(
                         "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
                         "generationConfig", Map.of("responseModalities", List.of("IMAGE")));
@@ -78,7 +79,8 @@ public class GeminiImageGenerationService implements ImageGenerationService {
             Files.createDirectories(workDir);
             String prompt = "Create one " + imageStyle + " " + aspectRatio + " keyframe, no text."
                     + SINGLE_FRAME_RULE + " Topic: " + topic + ". Shot: " + visualPrompt + ". Keep cast consistent: "
-                    + (characterDescription == null ? "" : characterDescription) + ". Seed hint: " + seed;
+                    + (characterDescription == null ? "" : characterDescription)
+                    + SceneEmotionAnalyzer.cue(visualPrompt) + ". Seed hint: " + seed;
             RestClient client = restClientBuilder.baseUrl("https://generativelanguage.googleapis.com/v1beta")
                     .defaultHeader("x-goog-api-key", apiKey).build();
             Map<String, Object> body = Map.of("contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),

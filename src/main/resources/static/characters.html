@@ -81,27 +81,16 @@
               <textarea id="characterDescriptionInput" rows="4" placeholder="VD: Nam thanh niên tóc đen ngắn nhuộm sọc xanh điện, mắt hổ phách, áo đấu số 9 xanh navy phối trắng-cyan, quấn băng trắng ống chân trái, vòng tay hạt gỗ..."></textarea>
             </div>
             <div class="create-form__field create-form__field--wide" style="margin-top: 14px">
-              <label for="characterImageInput">Ảnh đại diện (tuỳ chọn - chỉ để nhận diện trong thư viện)</label>
+              <label for="characterImageInput">Ảnh nhân vật / character sheet (dùng để giữ ngoại hình)</label>
               <input type="file" id="characterImageInput" accept="image/png,image/jpeg,image/webp" />
+              <p class="create-form__note">Local MCP sẽ dùng ảnh này làm tham chiếu. Nếu là character sheet ngang, hệ thống tự lấy vùng hero và không truyền nguyên lưới.</p>
             </div>
-            <div class="create-form__grid" style="margin-top: 14px">
-              <div class="create-form__field">
-                <label for="characterFaceImageInput">Ảnh khuôn mặt</label>
-                <input type="file" id="characterFaceImageInput" accept="image/png,image/jpeg,image/webp" />
-              </div>
-              <div class="create-form__field">
-                <label for="characterFullBodyImageInput">Ảnh toàn thân</label>
-                <input type="file" id="characterFullBodyImageInput" accept="image/png,image/jpeg,image/webp" />
-              </div>
-              <div class="create-form__field">
-                <label for="characterOutfitImageInput">Ảnh trang phục</label>
-                <input type="file" id="characterOutfitImageInput" accept="image/png,image/jpeg,image/webp" />
-              </div>
-              <div class="create-form__field">
-                <label for="characterStoryboardImageInput">Storyboard mặc định · lưới 12 ô</label>
-                <input type="file" id="characterStoryboardImageInput" accept="image/png,image/jpeg,image/webp" />
-              </div>
+            <div class="create-form__field create-form__field--wide" style="margin-top: 14px">
+              <label for="characterStoryboardImageInput">Storyboard mặc định · lưới 12 ô (tuỳ chọn)</label>
+              <input type="file" id="characterStoryboardImageInput" accept="image/png,image/jpeg,image/webp" />
+              <p class="create-form__note">Ảnh phải đúng lưới 4 cột × 3 hàng. Ô thứ N được dùng làm ảnh gốc cho cảnh thứ N khi render bằng Local MCP · ComfyUI.</p>
             </div>
+            <p class="create-form__note create-form__field--wide" style="margin-top: 10px">Kết quả tốt nhất khi có cả <strong>mô tả chi tiết</strong> và <strong>ảnh nhân vật</strong>. Cảm xúc từng cảnh được suy luận từ prompt và chuyển thành nét mặt/ngôn ngữ cơ thể.</p>
             <p class="create-form__error" id="createCharacterError" role="alert" hidden></p>
           </form>
           <div class="hero-section__film-strip hero-section__film-strip--right" aria-hidden="true">

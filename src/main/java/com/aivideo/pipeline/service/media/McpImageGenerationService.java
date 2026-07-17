@@ -79,6 +79,19 @@ public class McpImageGenerationService implements ImageGenerationService {
         return "mcp";
     }
 
+    /** Câu đếm nhân vật cho prompt. Solo: giữ nguyên câu đã A/B-test chống nhân bản.
+     * Có cast phụ (marker "Supporting cast:" do PipelineOrchestrator gắn): đếm cả dàn,
+     * mỗi người đúng một lần - câu "exactly one main character" sẽ ép model bỏ cast. */
+    private static String characterNote(String characterDescription) {
+        if (characterDescription == null || characterDescription.isBlank()) return "";
+        if (characterDescription.contains("Supporting cast:")) {
+            return " The scene features exactly these characters, each appearing exactly once. "
+                    + characterDescription;
+        }
+        return " The scene features exactly one main character, a single instance of: "
+                + characterDescription + ".";
+    }
+
     @Override
     public void generateImages(String topic, String script, int count, Long jobId,
             String imageStyle, String aspectRatio, String characterDescription) {
@@ -89,15 +102,20 @@ public class McpImageGenerationService implements ImageGenerationService {
             sendInitialized(endpoint, sessionId);
             String[] scenes = script.split("(?<=[.!?])\\s+|\\R+");
             int[] dimensions = dimensions(aspectRatio);
-            String characterNote = characterDescription == null || characterDescription.isBlank() ? ""
-                    : " Main character must look exactly the same in every image: " + characterDescription + ".";
+            // "consistent characters"/"the same in every image" made the diffusion model draw a
+            // crowd of identical clones IN one frame (A/B at a fixed seed: old wording -> ~10
+            // copies, this wording -> one). Count positively, per image, instead. When the
+            // description carries a supporting cast (marker from PipelineOrchestrator), the
+            // "exactly one" phrasing would suppress them - count the whole cast instead.
+            String characterNote = characterNote(characterDescription);
             for (int i = 0; i < count; i++) {
                 String scene = scenes.length == 0 ? script : scenes[Math.min(i * scenes.length / count, scenes.length - 1)];
                 String shotDirection = AnimeSakugaPreset.enabled(imageStyle)
                         ? AnimeSakugaPreset.shotDirection(i, count) : "";
                 Map<String, Object> arguments = new LinkedHashMap<>();
-                arguments.put("prompt", "Create a " + imageStyle + " scene with consistent characters, no text."
-                        + SINGLE_FRAME_RULE + characterNote + " Topic: " + topic + ". Scene: " + scene + shotDirection);
+                arguments.put("prompt", "Create a " + imageStyle + " scene, no text."
+                        + SINGLE_FRAME_RULE + characterNote + " Topic: " + topic + ". Scene: " + scene
+                        + SceneEmotionAnalyzer.cue(scene) + shotDirection);
                 arguments.put("negativePrompt", "text, subtitles, watermark, logo, blurry, low quality, "
                         + SINGLE_FRAME_NEGATIVE);
                 arguments.put("width", dimensions[0]);
@@ -106,7 +124,7 @@ public class McpImageGenerationService implements ImageGenerationService {
                 arguments.put("aspectRatio", aspectRatio);
                 arguments.put("sceneIndex", i + 1);
                 arguments.put("seed", Math.abs((jobId + ":" + (i + 1)).hashCode()));
-                addStoryboardReference(arguments, jobId, i + 1);
+                addVisualReference(arguments, jobId, i + 1);
                 JsonNode result = rpc(endpoint, sessionId, "tools/call",
                         Map.of("name", toolName, "arguments", arguments));
                 saveImage(result, jobId, i + 1);
@@ -125,18 +143,18 @@ public class McpImageGenerationService implements ImageGenerationService {
             String sessionId = initialize(endpoint);
             sendInitialized(endpoint, sessionId);
             int[] dimensions = dimensions(aspectRatio);
-            String characterNote = characterDescription == null || characterDescription.isBlank() ? ""
-                    : " Main character and cast must remain consistent: " + characterDescription + ".";
+            String characterNote = characterNote(characterDescription);
             Map<String, Object> arguments = new LinkedHashMap<>();
             arguments.put("prompt", "Create a " + imageStyle + " keyframe, no text." + SINGLE_FRAME_RULE
-                    + characterNote + " Topic: " + topic + ". Shot: " + visualPrompt);
+                    + characterNote + " Topic: " + topic + ". Shot: " + visualPrompt
+                    + SceneEmotionAnalyzer.cue(visualPrompt));
             arguments.put("negativePrompt", "text, subtitles, watermark, logo, blurry, malformed anatomy,"
                     + " duplicate characters, " + SINGLE_FRAME_NEGATIVE);
             arguments.put("width", dimensions[0]);
             arguments.put("height", dimensions[1]);
             arguments.put("seed", seed);
             arguments.put("sceneIndex", outputIndex);
-            addStoryboardReference(arguments, jobId, outputIndex);
+            addVisualReference(arguments, jobId, outputIndex);
             JsonNode result = rpc(endpoint, sessionId, "tools/call", Map.of("name", toolName, "arguments", arguments));
             saveImage(result, jobId, outputIndex);
         } catch (Exception e) {
@@ -249,9 +267,25 @@ public class McpImageGenerationService implements ImageGenerationService {
         };
     }
 
-    private void addStoryboardReference(Map<String, Object> arguments, Long jobId, int shotNumber) {
+    private void addVisualReference(Map<String, Object> arguments, Long jobId, int shotNumber) {
         jobRepository.findById(jobId).flatMap(job -> job.getCharacterId() == null
                 ? java.util.Optional.empty() : characterRepository.findById(job.getCharacterId())).ifPresent(character -> {
+            if (character.getImageExt() != null) {
+                Path identity = workDir.resolve("character-" + character.getId() + "." + character.getImageExt());
+                if (Files.isRegularFile(identity)) {
+                    try {
+                        BufferedImage source = ImageIO.read(identity.toFile());
+                        BufferedImage reference = extractHeroReference(source);
+                        ByteArrayOutputStream output = new ByteArrayOutputStream();
+                        ImageIO.write(reference, "png", output);
+                        arguments.put("characterReferenceBase64", Base64.getEncoder().encodeToString(output.toByteArray()));
+                        arguments.put("characterStrength", 0.82);
+                        return;
+                    } catch (Exception ignored) {
+                        // Fall through to storyboard or text-only generation.
+                    }
+                }
+            }
             if (character.getStoryboardImageExt() == null) return;
             Path file = workDir.resolve("character-" + character.getId() + "-storyboard."
                     + character.getStoryboardImageExt());
@@ -274,5 +308,15 @@ public class McpImageGenerationService implements ImageGenerationService {
                 // A broken optional storyboard must not block text-to-image fallback.
             }
         });
+    }
+
+    /** Character sheets are landscape; extract their large central hero drawing instead of feeding the whole grid. */
+    private BufferedImage extractHeroReference(BufferedImage source) {
+        if (source == null || source.getWidth() <= source.getHeight() * 1.45) return source;
+        int x = source.getWidth() * 17 / 100;
+        int y = source.getHeight() * 3 / 100;
+        int width = Math.min(source.getWidth() - x, source.getWidth() * 31 / 100);
+        int height = Math.min(source.getHeight() - y, source.getHeight() * 65 / 100);
+        return source.getSubimage(x, y, width, height);
     }
 }

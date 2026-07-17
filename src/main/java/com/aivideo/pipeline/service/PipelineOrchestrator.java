@@ -49,6 +49,7 @@ public class PipelineOrchestrator {
             VideoJob job = updateStatus(jobId, JobStatus.SCRIPTING);
             String script = scriptService.generateScript(job.getTopic(), scriptSource(job), job.getTargetDurationSeconds(),
                     job.getLanguage(), job.getCharacterDescription());
+            script = absorbCastManifest(job, script);
             job.setScriptContent(script);
             job.setStatus(JobStatus.SCRIPT_READY);
             jobRepository.save(job);
@@ -69,7 +70,34 @@ public class PipelineOrchestrator {
                 - Mỗi dòng phải theo định dạng TÊN NHÂN VẬT: câu thoại.
                 - Chỉ viết những câu nhân vật thực sự nói thành tiếng; truyền tải hành động và cảm xúc qua lời thoại.
                 - Không đọc mô tả góc máy, hiệu ứng, hành động hoặc tên cảnh.
+
+                KHAI BÁO DÀN NHÂN VẬT BẮT BUỘC:
+                - Mở đầu output bằng khối sau (không phải lời thoại, sẽ bị hệ thống tách ra):
+                [CAST]
+                TÊN NHÂN VẬT: loài (người/mèo/chim...), giới tính, tuổi, ngoại hình + trang phục ngắn gọn bằng tiếng Anh
+                (một dòng cho MỖI nhân vật có thoại trong kịch bản)
+                [/CAST]
+                - Sau [/CAST] mới tới phần lời thoại.
                 """ + cast + "\n\nPROMPT SẢN XUẤT:\n" + source;
+    }
+
+    private static final java.util.regex.Pattern CAST_BLOCK = java.util.regex.Pattern.compile(
+            "(?is)\\[CAST\\]\\s*(.*?)\\s*\\[/CAST\\]\\s*");
+
+    /**
+     * Kịch bản chỉ chứa TÊN người nói ("AN: ...") - cái tên không cho model vẽ ảnh biết
+     * AN là người hay mèo. LLM được yêu cầu khai báo khối [CAST] mô tả ngoại hình từng
+     * nhân vật; tách khối đó vào castDescription (nguồn cho prompt vẽ ảnh) và cắt khỏi
+     * kịch bản để TTS không đọc nó thành tiếng.
+     */
+    private String absorbCastManifest(VideoJob job, String script) {
+        if (script == null || !"storyboard_animatic".equals(job.getCreationMode())) return script;
+        java.util.regex.Matcher matcher = CAST_BLOCK.matcher(script);
+        if (!matcher.find()) return script;
+        String manifest = matcher.group(1).trim().replaceAll("\\R+", " | ");
+        String existing = job.getCastDescription();
+        job.setCastDescription(existing == null || existing.isBlank() ? manifest : existing + " | " + manifest);
+        return matcher.replaceAll("").trim();
     }
 
     /** Giai đoạn 2: sau khi duyệt - chạy TTS -> render -> upload. */
@@ -133,6 +161,34 @@ public class PipelineOrchestrator {
         }
     }
 
+    /** Tiếp tục lượt sinh bị gián đoạn và không ghi đè các keyframe đã tồn tại. */
+    @Async("pipelineExecutor")
+    public void resumeStoryboardKeyframes(Long jobId) {
+        try {
+            VideoJob job = updateStatus(jobId, JobStatus.GENERATING_KEYFRAMES);
+            var shots = shotRepository.findByJobIdOrderByShotNumber(jobId);
+            for (var shot : shots) {
+                String existing = findImageExtOrNull(jobId, shot.getShotNumber());
+                if (existing != null) {
+                    shot.setImageExt(existing);
+                    continue;
+                }
+                imageAgentRouter.generateSingle(job.getImageAgent(), job.getTopic(), shot.getVisualPrompt(), jobId,
+                        shot.getShotNumber(), "anime sakuga animatic", job.getAspectRatio(),
+                        combinedCharacterDescription(job), shot.getSeed());
+                shot.setImageExt(findImageExt(jobId, shot.getShotNumber()));
+                shot.setApproved(false);
+                shotRepository.save(shot);
+            }
+            shotRepository.saveAll(shots);
+            job.setErrorMessage(null);
+            job.setStatus(JobStatus.KEYFRAMES_REVIEW);
+            jobRepository.save(job);
+        } catch (Exception e) {
+            markFailed(jobId, "Lỗi tiếp tục sinh keyframe: " + e.getMessage());
+        }
+    }
+
     @Async("pipelineExecutor")
     public void renderApprovedStoryboard(Long jobId) {
         try {
@@ -163,16 +219,25 @@ public class PipelineOrchestrator {
         }
     }
 
-    private String combinedCharacterDescription(VideoJob job) {
-        return (job.getCharacterDescription() == null ? "" : job.getCharacterDescription())
-                + (job.getCastDescription() == null ? "" : " Supporting cast: " + job.getCastDescription());
+    /** Mô tả C1 + cast phụ theo format thống nhất; marker "Supporting cast:" được
+     * McpImageGenerationService dùng để chọn câu đếm nhân vật phù hợp (1 vs nhiều). */
+    public static String combinedCharacterDescription(VideoJob job) {
+        String main = job.getCharacterDescription() == null ? "" : job.getCharacterDescription();
+        if (job.getCastDescription() == null || job.getCastDescription().isBlank()) return main;
+        return "Main character: " + main + " Supporting cast: " + job.getCastDescription();
     }
 
     private String findImageExt(Long jobId, int index) {
+        String found = findImageExtOrNull(jobId, index);
+        if (found != null) return found;
+        throw new IllegalStateException("Không tìm thấy keyframe P" + String.format("%02d", index));
+    }
+
+    private String findImageExtOrNull(Long jobId, int index) {
         for (String ext : java.util.List.of("png", "jpg", "jpeg", "webp")) {
             if (Files.exists(Path.of(workDir).resolve("job-" + jobId + "-image-" + index + "." + ext))) return ext;
         }
-        throw new IllegalStateException("Không tìm thấy keyframe P" + String.format("%02d", index));
+        return null;
     }
 
     private Path findMusic(Long jobId) {

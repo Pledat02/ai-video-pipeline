@@ -46,6 +46,15 @@ public class ShotPlanService {
         int shotCount = Math.max(1, Math.min(job.getImageCount() == null ? 12 : job.getImageCount(), 48));
         List<String> visuals = parseVisuals(job.getDirectorPrompt() == null ? job.getSourceContent() : job.getDirectorPrompt(), shotCount);
         List<String> narrationParts = splitNarration(job.getScriptContent(), shotCount);
+        // Khi prompt sản xuất không có "P01:..." từng cảnh, fallback cũ chỉ là chuỗi
+        // generic "Anime sakuga keyframe P01" - keyframe không chứa nội dung câu chuyện
+        // và nhân vật (kể cả cast phụ) không bao giờ xuất hiện. Dùng phần thoại của
+        // cảnh đó làm visual prompt để hình bám theo ai đang nói và làm gì.
+        for (int i = 0; i < shotCount; i++) {
+            if (visuals.get(i).startsWith("Anime sakuga keyframe P") && !narrationParts.get(i).isBlank()) {
+                visuals.set(i, "Depict this dialogue moment (characters, action, emotion): " + narrationParts.get(i));
+            }
+        }
         double totalDuration = job.getTargetDurationSeconds() == null
                 ? Math.max(15, wordCount(job.getScriptContent()) / 2.4) : job.getTargetDurationSeconds();
         List<VideoShot> shots = new ArrayList<>();
@@ -132,10 +141,9 @@ public class ShotPlanService {
         }
         try {
             clearShotImage(jobId, shotNumber);
-            String cast = (job.getCharacterDescription() == null ? "" : job.getCharacterDescription())
-                    + (job.getCastDescription() == null ? "" : " | " + job.getCastDescription());
             imageAgentRouter.generateSingle(job.getImageAgent(), job.getTopic(), shot.getVisualPrompt(), jobId,
-                    shotNumber, "anime sakuga animatic", job.getAspectRatio(), cast, shot.getSeed());
+                    shotNumber, "anime sakuga animatic", job.getAspectRatio(),
+                    PipelineOrchestrator.combinedCharacterDescription(job), shot.getSeed());
             shot.setImageExt(detectImageExt(jobId, shotNumber));
             shot.setApproved(false);
             return shotRepository.save(shot);
@@ -164,6 +172,19 @@ public class ShotPlanService {
         job.setErrorMessage(null);
         job = jobRepository.save(job);
         orchestrator.generateStoryboardKeyframes(jobId);
+        return job;
+    }
+
+    public VideoJob resumeKeyframes(Long jobId) {
+        VideoJob job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new NotFoundException("Không tìm thấy job id=" + jobId));
+        if (job.getStatus() != JobStatus.GENERATING_KEYFRAMES && job.getStatus() != JobStatus.FAILED) {
+            throw new InvalidStateException("Chỉ tiếp tục được job đang sinh keyframe hoặc đã lỗi");
+        }
+        job.setErrorMessage(null);
+        job.setStatus(JobStatus.GENERATING_KEYFRAMES);
+        job = jobRepository.save(job);
+        orchestrator.resumeStoryboardKeyframes(jobId);
         return job;
     }
 

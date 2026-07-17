@@ -52,7 +52,7 @@ def workflow(args):
         "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["29", 0]}},
         "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ai-video-mcp", "images": ["8", 0]}},
     }
-    reference = args.get("storyboardReferenceBase64")
+    reference = args.get("characterReferenceBase64") or args.get("storyboardReferenceBase64")
     if reference:
         os.makedirs(COMFYUI_INPUT_DIR, exist_ok=True)
         filename = f"mcp-storyboard-{uuid.uuid4().hex}.png"
@@ -64,7 +64,8 @@ def workflow(args):
             "height": int(args.get("height", 1024)), "crop": "center"}}
         graph["42"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["41", 0], "vae": ["29", 0]}}
         graph["3"]["inputs"]["latent_image"] = ["42", 0]
-        graph["3"]["inputs"]["denoise"] = float(args.get("storyboardStrength", 0.72))
+        strength = args.get("characterStrength") if args.get("characterReferenceBase64") else args.get("storyboardStrength", 0.72)
+        graph["3"]["inputs"]["denoise"] = float(strength or 0.82)
     return graph
 
 

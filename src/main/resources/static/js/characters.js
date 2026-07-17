@@ -10,9 +10,6 @@
   const nameInput = document.getElementById("characterNameInput");
   const descriptionInput = document.getElementById("characterDescriptionInput");
   const imageInput = document.getElementById("characterImageInput");
-  const faceImageInput = document.getElementById("characterFaceImageInput");
-  const fullBodyImageInput = document.getElementById("characterFullBodyImageInput");
-  const outfitImageInput = document.getElementById("characterOutfitImageInput");
   const storyboardImageInput = document.getElementById("characterStoryboardImageInput");
   const createBtn = document.getElementById("createCharacterBtn");
   const createError = document.getElementById("createCharacterError");
@@ -53,19 +50,18 @@
   }
 
   function characterCardHtml(character) {
-    const thumb = character.imageUrl
-      ? `<img src="${character.imageUrl}" alt="${escapeHtml(character.name)}" />`
+    // Fall back to the storyboard so a character that only has a model sheet still shows
+    // a picture in the library instead of the bare placeholder.
+    const thumbUrl = character.imageUrl || character.storyboardImageUrl;
+    const thumb = thumbUrl
+      ? `<img src="${thumbUrl}" alt="${escapeHtml(character.name)}" />`
       : `<div class="character-card__placeholder" aria-hidden="true">🎭</div>`;
     const description = character.description
       ? escapeHtml(character.description)
       : "<em>Chưa có mô tả</em>";
-    const references = [
-      [character.faceImageUrl, "Khuôn mặt"],
-      [character.fullBodyImageUrl, "Toàn thân"],
-      [character.outfitImageUrl, "Trang phục"],
-      [character.storyboardImageUrl, "Storyboard 12 cảnh"],
-    ].filter(([url]) => url).map(([url, label]) =>
-      `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`).join(" · ");
+    const references = character.storyboardImageUrl
+      ? `<a href="${character.storyboardImageUrl}" target="_blank" rel="noreferrer">Storyboard 12 cảnh</a>`
+      : "";
     return `
       <article class="character-card" data-character-id="${character.id}">
         <div class="character-card__thumb">${thumb}</div>
@@ -124,9 +120,6 @@
       formData.append("name", name);
       formData.append("description", descriptionInput.value.trim());
       if (imageInput.files[0]) formData.append("image", imageInput.files[0]);
-      if (faceImageInput.files[0]) formData.append("faceImage", faceImageInput.files[0]);
-      if (fullBodyImageInput.files[0]) formData.append("fullBodyImage", fullBodyImageInput.files[0]);
-      if (outfitImageInput.files[0]) formData.append("outfitImage", outfitImageInput.files[0]);
       if (storyboardImageInput.files[0]) formData.append("storyboardImage", storyboardImageInput.files[0]);
       await apiFetch("", { method: "POST", body: formData });
       createForm.reset();

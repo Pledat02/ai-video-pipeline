@@ -8,9 +8,9 @@ import lombok.Setter;
 import java.time.Instant;
 
 /**
- * Nhân vật tái sử dụng được cho nhiều video - mô tả (description) được chèn vào
- * prompt sinh kịch bản + sinh ảnh để nhân vật xuất hiện nhất quán. Ảnh đại diện
- * (imageExt) chỉ để người dùng nhận diện trong thư viện, không dùng để AI vẽ theo.
+ * Nhân vật tái sử dụng: mô tả được chèn vào prompt và imageExt được Local MCP dùng
+ * làm identity reference. Với character sheet ngang, service tự lấy vùng hero thay
+ * vì truyền toàn bộ các ô. Storyboard vẫn chỉ dùng để định hướng bố cục từng cảnh.
  */
 @Entity
 @Table(name = "characters")
@@ -33,15 +33,7 @@ public class Character {
     @Column(length = 10)
     private String imageExt;
 
-    @Column(length = 10)
-    private String faceImageExt;
-
-    @Column(length = 10)
-    private String fullBodyImageExt;
-
-    @Column(length = 10)
-    private String outfitImageExt;
-
+    /** Lưới 4x3 = 12 ô; ô thứ N được cắt ra làm ảnh khởi tạo img2img cho cảnh N. */
     @Column(length = 10)
     private String storyboardImageExt;
 

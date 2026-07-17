@@ -30,7 +30,6 @@ public class CharacterService {
 
     @Transactional
     public Character create(String name, String description, MultipartFile image,
-            MultipartFile faceImage, MultipartFile fullBodyImage, MultipartFile outfitImage,
             MultipartFile storyboardImage) {
         String cleanName = clean(name);
         if (cleanName == null) {
@@ -41,7 +40,7 @@ public class CharacterService {
         character.setDescription(clean(description));
         character = repository.save(character);
         if (image != null && !image.isEmpty()) saveImage(character, image);
-        saveReferenceImages(character, faceImage, fullBodyImage, outfitImage, storyboardImage);
+        saveStoryboardImage(character, storyboardImage);
         return character;
     }
 
@@ -56,14 +55,17 @@ public class CharacterService {
 
     @Transactional
     public Character update(Long id, String name, String description, MultipartFile image,
-            MultipartFile faceImage, MultipartFile fullBodyImage, MultipartFile outfitImage,
-            MultipartFile storyboardImage) {
+            MultipartFile storyboardImage, boolean removeStoryboard) {
         Character character = findById(id);
         if (clean(name) != null) character.setName(clean(name));
         if (description != null) character.setDescription(clean(description));
+        if (removeStoryboard) {
+            clearStoryboardImage(character);
+            character.setStoryboardImageExt(null);
+        }
         character = repository.save(character);
         if (image != null && !image.isEmpty()) saveImage(character, image);
-        saveReferenceImages(character, faceImage, fullBodyImage, outfitImage, storyboardImage);
+        saveStoryboardImage(character, storyboardImage);
         return character;
     }
 
@@ -71,7 +73,7 @@ public class CharacterService {
     public void delete(Long id) {
         Character character = findById(id);
         clearImage(character);
-        clearReferenceImages(character);
+        clearStoryboardImage(character);
         repository.delete(character);
     }
 
@@ -80,11 +82,7 @@ public class CharacterService {
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
             throw new IllegalArgumentException("Chỉ chấp nhận ảnh PNG, JPEG hoặc WebP");
         }
-        String ext = switch (contentType) {
-            case "image/png" -> "png";
-            case "image/webp" -> "webp";
-            default -> "jpg";
-        };
+        String ext = extensionOf(contentType);
         try {
             Path dir = Path.of(workDir);
             Files.createDirectories(dir);
@@ -106,65 +104,43 @@ public class CharacterService {
         }
     }
 
-    private void saveReferenceImages(Character character, MultipartFile face, MultipartFile fullBody,
-            MultipartFile outfit, MultipartFile storyboard) {
-        saveReferenceImage(character, "face", face);
-        saveReferenceImage(character, "full-body", fullBody);
-        saveReferenceImage(character, "outfit", outfit);
-        saveReferenceImage(character, "storyboard", storyboard);
-    }
-
-    private void saveReferenceImage(Character character, String role, MultipartFile file) {
+    private void saveStoryboardImage(Character character, MultipartFile file) {
         if (file == null || file.isEmpty()) return;
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
-            throw new IllegalArgumentException("Chỉ chấp nhận ảnh PNG, JPEG hoặc WebP cho " + role);
+            throw new IllegalArgumentException("Chỉ chấp nhận ảnh PNG, JPEG hoặc WebP cho storyboard");
         }
-        String ext = switch (contentType) {
+        String ext = extensionOf(contentType);
+        try {
+            Files.createDirectories(Path.of(workDir));
+            clearStoryboardImage(character);
+            file.transferTo(storyboardPath(character.getId(), ext));
+            character.setStoryboardImageExt(ext);
+            repository.save(character);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Không lưu được ảnh storyboard", e);
+        }
+    }
+
+    private void clearStoryboardImage(Character character) {
+        if (character.getStoryboardImageExt() == null) return;
+        try {
+            Files.deleteIfExists(storyboardPath(character.getId(), character.getStoryboardImageExt()));
+        } catch (IOException ignored) {
+            // dọn file cũ thất bại không nên chặn thao tác chính
+        }
+    }
+
+    private Path storyboardPath(Long id, String ext) {
+        return Path.of(workDir).resolve("character-" + id + "-storyboard." + ext);
+    }
+
+    private static String extensionOf(String contentType) {
+        return switch (contentType) {
             case "image/png" -> "png";
             case "image/webp" -> "webp";
             default -> "jpg";
         };
-        try {
-            Files.createDirectories(Path.of(workDir));
-            String oldExt = referenceExt(character, role);
-            if (oldExt != null) Files.deleteIfExists(referencePath(character.getId(), role, oldExt));
-            file.transferTo(referencePath(character.getId(), role, ext));
-            setReferenceExt(character, role, ext);
-            repository.save(character);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Không lưu được ảnh tham chiếu " + role, e);
-        }
-    }
-
-    private void clearReferenceImages(Character character) {
-        for (String role : List.of("face", "full-body", "outfit", "storyboard")) {
-            String ext = referenceExt(character, role);
-            if (ext == null) continue;
-            try { Files.deleteIfExists(referencePath(character.getId(), role, ext)); } catch (IOException ignored) {}
-        }
-    }
-
-    private Path referencePath(Long id, String role, String ext) {
-        return Path.of(workDir).resolve("character-" + id + "-" + role + "." + ext);
-    }
-
-    private String referenceExt(Character character, String role) {
-        return switch (role) {
-            case "face" -> character.getFaceImageExt();
-            case "full-body" -> character.getFullBodyImageExt();
-            case "outfit" -> character.getOutfitImageExt();
-            default -> character.getStoryboardImageExt();
-        };
-    }
-
-    private void setReferenceExt(Character character, String role, String ext) {
-        switch (role) {
-            case "face" -> character.setFaceImageExt(ext);
-            case "full-body" -> character.setFullBodyImageExt(ext);
-            case "outfit" -> character.setOutfitImageExt(ext);
-            default -> character.setStoryboardImageExt(ext);
-        }
     }
 
     private static String clean(String value) {

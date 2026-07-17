@@ -127,6 +127,11 @@ public class VideoJobController {
         return JobResponse.from(shotPlanService.approvePlan(id));
     }
 
+    @PostMapping("/{id}/shots/resume")
+    public JobResponse resumeKeyframes(@PathVariable Long id) {
+        return JobResponse.from(shotPlanService.resumeKeyframes(id));
+    }
+
     @PostMapping("/{id}/shots/{shotNumber}/approval")
     public ShotResponse approveShot(@PathVariable Long id, @PathVariable int shotNumber,
             @RequestParam(defaultValue = "true") boolean approved) {
