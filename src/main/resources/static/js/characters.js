@@ -10,6 +10,10 @@
   const nameInput = document.getElementById("characterNameInput");
   const descriptionInput = document.getElementById("characterDescriptionInput");
   const imageInput = document.getElementById("characterImageInput");
+  const faceImageInput = document.getElementById("characterFaceImageInput");
+  const fullBodyImageInput = document.getElementById("characterFullBodyImageInput");
+  const outfitImageInput = document.getElementById("characterOutfitImageInput");
+  const storyboardImageInput = document.getElementById("characterStoryboardImageInput");
   const createBtn = document.getElementById("createCharacterBtn");
   const createError = document.getElementById("createCharacterError");
   const toastRegion = document.getElementById("toastRegion");
@@ -55,12 +59,20 @@
     const description = character.description
       ? escapeHtml(character.description)
       : "<em>Chưa có mô tả</em>";
+    const references = [
+      [character.faceImageUrl, "Khuôn mặt"],
+      [character.fullBodyImageUrl, "Toàn thân"],
+      [character.outfitImageUrl, "Trang phục"],
+      [character.storyboardImageUrl, "Storyboard 12 cảnh"],
+    ].filter(([url]) => url).map(([url, label]) =>
+      `<a href="${url}" target="_blank" rel="noreferrer">${label}</a>`).join(" · ");
     return `
       <article class="character-card" data-character-id="${character.id}">
         <div class="character-card__thumb">${thumb}</div>
         <div class="character-card__body">
           <h3 class="character-card__name">${escapeHtml(character.name)}</h3>
           <p class="character-card__description">${description}</p>
+          <p class="character-card__description">${references || "<em>Chưa có ảnh tham chiếu</em>"}</p>
         </div>
         <button type="button" class="btn-icon btn-icon--close character-card__delete" data-character-id="${character.id}" aria-label="Xoá nhân vật">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -112,6 +124,10 @@
       formData.append("name", name);
       formData.append("description", descriptionInput.value.trim());
       if (imageInput.files[0]) formData.append("image", imageInput.files[0]);
+      if (faceImageInput.files[0]) formData.append("faceImage", faceImageInput.files[0]);
+      if (fullBodyImageInput.files[0]) formData.append("fullBodyImage", fullBodyImageInput.files[0]);
+      if (outfitImageInput.files[0]) formData.append("outfitImage", outfitImageInput.files[0]);
+      if (storyboardImageInput.files[0]) formData.append("storyboardImage", storyboardImageInput.files[0]);
       await apiFetch("", { method: "POST", body: formData });
       createForm.reset();
       showToast("Đã tạo nhân vật", "success");

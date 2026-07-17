@@ -9,6 +9,9 @@ public enum JobStatus {
     PENDING,            // Vừa tạo, chờ sinh kịch bản
     SCRIPTING,          // Đang gọi LLM sinh kịch bản
     SCRIPT_READY,       // Kịch bản đã sinh xong, CHỜ NGƯỜI DUYỆT (bước bắt buộc!)
+    SHOT_PLAN_READY,    // Đã tách danh sách cảnh P01-Pxx, chờ duyệt kế hoạch
+    GENERATING_KEYFRAMES,
+    KEYFRAMES_REVIEW,   // Đã có ảnh, chờ duyệt đủ 12 keyframe
     APPROVED,           // Người dùng đã duyệt/sửa kịch bản, sẵn sàng sản xuất
     GENERATING_AUDIO,   // Đang tạo giọng đọc TTS
     RENDERING,          // Đang ghép video bằng FFmpeg

@@ -42,6 +42,7 @@ public class VideoJobService {
     private final VideoJobRepository jobRepository;
     private final PipelineOrchestrator orchestrator;
     private final CharacterService characterService;
+    private final ShotPlanService shotPlanService;
 
     @Value("${pipeline.work-dir}")
     private String workDir;
@@ -56,7 +57,11 @@ public class VideoJobService {
         String topic = clean(request.topic());
         String source = clean(request.sourceContent());
         String script = clean(request.scriptContent());
-        if (topic == null && source == null && script == null && (files == null || files.isEmpty())) {
+        boolean storyboardMode = "storyboard_animatic".equals(request.creationMode());
+        String directorPrompt = clean(request.directorPrompt());
+        if (storyboardMode && directorPrompt == null) throw new IllegalArgumentException("Hãy nhập prompt sản xuất");
+        if (storyboardMode && request.characterId() == null) throw new IllegalArgumentException("Sản xuất theo prompt cần chọn nhân vật chính");
+        if (topic == null && source == null && script == null && directorPrompt == null && (files == null || files.isEmpty())) {
             throw new IllegalArgumentException("Hãy nhập chủ đề, nội dung, kịch bản hoặc chọn ảnh");
         }
         if (request.targetDurationSeconds() != null &&
@@ -64,25 +69,40 @@ public class VideoJobService {
             throw new IllegalArgumentException("Thời lượng phải từ 15 giây đến 60 phút");
         }
         VideoJob job = new VideoJob();
-        job.setTopic(topic != null ? topic : source != null ? abbreviate(source) : "Video từ ảnh");
+        job.setTopic(topic != null ? topic : source != null ? abbreviate(source)
+                : directorPrompt != null ? abbreviate(directorPrompt) : "Video từ ảnh");
         job.setSourceContent(source);
         job.setScriptContent(script);
+        job.setCreationMode(storyboardMode ? "storyboard_animatic" : "standard");
+        job.setDirectorPrompt(directorPrompt);
         if (request.characterId() != null) {
             applyCharacter(job, request.characterId());
         } else {
             autoDetectCharacter(job, topic, source, script);
         }
         job.setTargetDurationSeconds(request.targetDurationSeconds());
+        if (storyboardMode) {
+            job.setSourceContent(directorPrompt);
+            job.setImageCount(Math.max(1, Math.min(request.imageCount() == null ? 12 : request.imageCount(), 48)));
+            job.setImageStyle("anime sakuga animatic");
+            job.setSceneMotion("anime_sakuga");
+            job.setCharacterC2Id(request.characterC2Id());
+            job.setCharacterC3Id(request.characterC3Id());
+            job.setCharacterC4Id(request.characterC4Id());
+            job.setCastDescription(buildCastDescription(request));
+        }
         job.setVoice(clean(request.voice()));
         job.setImageAgent(request.imageAgent() != null && Set.of("none", "gemini", "mcp").contains(request.imageAgent())
                 ? request.imageAgent() : "mcp");
-        job.setImageCount(Math.max(1, Math.min(request.imageCount() == null ? 6 : request.imageCount(), 12)));
+        if (!storyboardMode) job.setImageCount(Math.max(1, Math.min(request.imageCount() == null ? 6 : request.imageCount(), 48)));
         job.setLanguage(normalizeLanguage(request.language()));
         job.setSpeechRatePercent(Math.max(-50, Math.min(request.speechRatePercent() == null ? 0 : request.speechRatePercent(), 100)));
         job.setSubtitlesEnabled(request.subtitlesEnabled() == null || request.subtitlesEnabled());
         job.setAspectRatio(request.aspectRatio() != null && Set.of("16:9", "9:16", "1:1", "4:5").contains(request.aspectRatio()) ? request.aspectRatio() : "16:9");
-        job.setImageStyle(clean(request.imageStyle()) == null ? "cinematic" : clean(request.imageStyle()));
-        job.setSceneMotion(normalizeSceneMotion(request.sceneMotion()));
+        if (!storyboardMode) {
+            job.setImageStyle(clean(request.imageStyle()) == null ? "cinematic" : clean(request.imageStyle()));
+            job.setSceneMotion(normalizeSceneMotion(request.sceneMotion()));
+        }
         job.setMusicVolumePercent(Math.max(0, Math.min(request.musicVolumePercent() == null ? 18 : request.musicVolumePercent(), 100)));
         if (script != null) job.setStatus(JobStatus.SCRIPT_READY);
         job = jobRepository.save(job);
@@ -175,6 +195,28 @@ public class VideoJobService {
                 ? value : "none";
     }
 
+    private String buildCastDescription(CreateJobRequest request) {
+        StringBuilder result = new StringBuilder();
+        List<Long> ids = request.castCharacterIds() == null ? List.of() : request.castCharacterIds().stream()
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            ids = java.util.stream.Stream.of(request.characterC2Id(), request.characterC3Id(), request.characterC4Id())
+                    .filter(java.util.Objects::nonNull).distinct().toList();
+        }
+        for (int i = 0; i < ids.size(); i++) appendCast(result, "Supporting character " + (i + 1), ids.get(i));
+        return result.toString();
+    }
+
+    private void appendCast(StringBuilder result, String role, Long id) {
+        if (result.length() > 0) result.append(" | ");
+        if (id == null) result.append(role).append(": AI creates from director prompt");
+        else {
+            Character character = characterService.findById(id);
+            result.append(role).append(": ").append(character.getName()).append(" - ")
+                    .append(character.getDescription() == null ? "" : character.getDescription());
+        }
+    }
+
     private void saveMusic(Long jobId, MultipartFile file) {
         String contentType = file.getContentType();
         if (!Set.of("audio/mpeg", "audio/wav", "audio/x-wav", "audio/mp4").contains(contentType)) {
@@ -212,13 +254,18 @@ public class VideoJobService {
     }
 
     /** Duyệt kịch bản -> kích hoạt giai đoạn sản xuất. */
-    @Transactional
     public VideoJob approveScript(Long id) {
         VideoJob job = findById(id);
         requireStatus(job, JobStatus.SCRIPT_READY, "Job không ở trạng thái chờ duyệt");
-        job.setStatus(JobStatus.APPROVED);
-        job = jobRepository.save(job);
-        orchestrator.produceAndUpload(job.getId());
+        if ("storyboard_animatic".equals(job.getCreationMode())) {
+            job.setStatus(JobStatus.SHOT_PLAN_READY);
+            job = jobRepository.save(job);
+            shotPlanService.createPlan(job);
+        } else {
+            job.setStatus(JobStatus.APPROVED);
+            job = jobRepository.save(job);
+            orchestrator.produceAndUpload(job.getId());
+        }
         return job;
     }
 
@@ -253,7 +300,7 @@ public class VideoJobService {
         if (request.imageAgent() != null) {
             job.setImageAgent(Set.of("gemini", "mcp").contains(request.imageAgent()) ? request.imageAgent() : "none");
         }
-        if (request.imageCount() != null) job.setImageCount(Math.max(1, Math.min(request.imageCount(), 12)));
+        if (request.imageCount() != null) job.setImageCount(Math.max(1, Math.min(request.imageCount(), 48)));
         if (request.language() != null) job.setLanguage(normalizeLanguage(request.language()));
         if (request.speechRatePercent() != null) job.setSpeechRatePercent(Math.max(-50, Math.min(request.speechRatePercent(), 100)));
         if (request.subtitlesEnabled() != null) job.setSubtitlesEnabled(request.subtitlesEnabled());
@@ -266,7 +313,6 @@ public class VideoJobService {
     }
 
     /** Chạy lại job bị lỗi từ đầu giai đoạn sản xuất. */
-    @Transactional
     public VideoJob retry(Long id) {
         VideoJob job = findById(id);
         requireStatus(job, JobStatus.FAILED, "Chỉ retry được job đã FAILED");

@@ -3,12 +3,14 @@ package com.aivideo.pipeline.service;
 import com.aivideo.pipeline.domain.JobStatus;
 import com.aivideo.pipeline.domain.VideoJob;
 import com.aivideo.pipeline.repository.VideoJobRepository;
+import com.aivideo.pipeline.repository.VideoShotRepository;
 import com.aivideo.pipeline.service.media.ScriptGenerationService;
 import com.aivideo.pipeline.service.media.ImageAgentRouter;
 import com.aivideo.pipeline.service.media.RenderOptions;
 import com.aivideo.pipeline.service.media.TextToSpeechService;
 import com.aivideo.pipeline.service.media.VideoRenderService;
 import com.aivideo.pipeline.service.media.YoutubeUploadService;
+import com.aivideo.pipeline.service.media.StoryboardSoundDesignService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -37,13 +39,15 @@ public class PipelineOrchestrator {
     private final ImageAgentRouter imageAgentRouter;
     private final VideoRenderService renderService;
     private final YoutubeUploadService uploadService;
+    private final VideoShotRepository shotRepository;
+    private final StoryboardSoundDesignService soundDesignService;
 
     /** Giai đoạn 1: sinh kịch bản rồi DỪNG LẠI chờ người duyệt. */
     @Async("pipelineExecutor")
     public void generateScript(Long jobId) {
         try {
             VideoJob job = updateStatus(jobId, JobStatus.SCRIPTING);
-            String script = scriptService.generateScript(job.getTopic(), job.getSourceContent(), job.getTargetDurationSeconds(),
+            String script = scriptService.generateScript(job.getTopic(), scriptSource(job), job.getTargetDurationSeconds(),
                     job.getLanguage(), job.getCharacterDescription());
             job.setScriptContent(script);
             job.setStatus(JobStatus.SCRIPT_READY);
@@ -52,6 +56,20 @@ public class PipelineOrchestrator {
         } catch (Exception e) {
             markFailed(jobId, "Lỗi sinh kịch bản: " + e.getMessage());
         }
+    }
+
+    private String scriptSource(VideoJob job) {
+        String source = job.getSourceContent() == null ? "" : job.getSourceContent();
+        if (!"storyboard_animatic".equals(job.getCreationMode())) return source;
+        String cast = job.getCastDescription() == null ? "" : "\nDàn nhân vật phụ: " + job.getCastDescription();
+        return """
+                QUY TẮC HỘI THOẠI BẮT BUỘC:
+                - Kịch bản phải là lời đối thoại trực tiếp của các nhân vật trong cảnh.
+                - Không có người kể chuyện, lời dẫn, voice-over hoặc đoạn văn tường thuật.
+                - Mỗi dòng phải theo định dạng TÊN NHÂN VẬT: câu thoại.
+                - Chỉ viết những câu nhân vật thực sự nói thành tiếng; truyền tải hành động và cảm xúc qua lời thoại.
+                - Không đọc mô tả góc máy, hiệu ứng, hành động hoặc tên cảnh.
+                """ + cast + "\n\nPROMPT SẢN XUẤT:\n" + source;
     }
 
     /** Giai đoạn 2: sau khi duyệt - chạy TTS -> render -> upload. */
@@ -92,6 +110,69 @@ public class PipelineOrchestrator {
         } catch (Exception e) {
             markFailed(jobId, "Lỗi sản xuất video: " + e.getMessage());
         }
+    }
+
+    @Async("pipelineExecutor")
+    public void generateStoryboardKeyframes(Long jobId) {
+        try {
+            VideoJob job = updateStatus(jobId, JobStatus.GENERATING_KEYFRAMES);
+            var shots = shotRepository.findByJobIdOrderByShotNumber(jobId);
+            String shotScript = shots.stream().map(shot -> shot.getTitle() + ": " + shot.getVisualPrompt())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+            imageAgentRouter.generate(job.getImageAgent(), job.getTopic(), shotScript, shots.size(), jobId,
+                    "anime sakuga animatic", job.getAspectRatio(), combinedCharacterDescription(job));
+            for (var shot : shots) {
+                shot.setImageExt(findImageExt(jobId, shot.getShotNumber()));
+                shot.setApproved(false);
+            }
+            shotRepository.saveAll(shots);
+            job.setStatus(JobStatus.KEYFRAMES_REVIEW);
+            jobRepository.save(job);
+        } catch (Exception e) {
+            markFailed(jobId, "Lỗi sinh keyframe storyboard: " + e.getMessage());
+        }
+    }
+
+    @Async("pipelineExecutor")
+    public void renderApprovedStoryboard(Long jobId) {
+        try {
+            VideoJob job = updateStatus(jobId, JobStatus.GENERATING_AUDIO);
+            Path audio = ttsService.synthesize(job.getScriptContent(), jobId, job.getVoice(),
+                    job.getSpeechRatePercent() == null ? 0 : job.getSpeechRatePercent(),
+                    job.getSubtitlesEnabled() == null || job.getSubtitlesEnabled());
+            job.setAudioPath(audio.toString());
+            job.setStatus(JobStatus.RENDERING);
+            jobRepository.save(job);
+            var shots = shotRepository.findByJobIdOrderByShotNumber(jobId);
+            Path soundDesign = soundDesignService.build(jobId, shots);
+            Path backgroundTrack = findMusic(jobId);
+            if (backgroundTrack == null) backgroundTrack = soundDesign;
+            RenderOptions options = new RenderOptions(job.getSubtitlesEnabled() == null || job.getSubtitlesEnabled(),
+                    job.getAspectRatio(), "anime_sakuga", backgroundTrack,
+                    soundDesign != null ? 35 : (job.getMusicVolumePercent() == null ? 18 : job.getMusicVolumePercent()),
+                    shots.stream().map(shot -> shot.getDurationSeconds() == null ? 2.0 : shot.getDurationSeconds()).toList());
+            Path video = renderService.render(audio, job.getScriptContent(), jobId, options);
+            job.setVideoPath(video.toString());
+            job.setStatus(JobStatus.UPLOADING);
+            jobRepository.save(job);
+            job.setYoutubeVideoId(uploadService.upload(video, job.getTopic()));
+            job.setStatus(JobStatus.COMPLETED);
+            jobRepository.save(job);
+        } catch (Exception e) {
+            markFailed(jobId, "Lỗi render storyboard: " + e.getMessage());
+        }
+    }
+
+    private String combinedCharacterDescription(VideoJob job) {
+        return (job.getCharacterDescription() == null ? "" : job.getCharacterDescription())
+                + (job.getCastDescription() == null ? "" : " Supporting cast: " + job.getCastDescription());
+    }
+
+    private String findImageExt(Long jobId, int index) {
+        for (String ext : java.util.List.of("png", "jpg", "jpeg", "webp")) {
+            if (Files.exists(Path.of(workDir).resolve("job-" + jobId + "-image-" + index + "." + ext))) return ext;
+        }
+        throw new IllegalStateException("Không tìm thấy keyframe P" + String.format("%02d", index));
     }
 
     private Path findMusic(Long jobId) {

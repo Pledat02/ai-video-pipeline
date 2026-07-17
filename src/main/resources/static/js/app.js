@@ -8,6 +8,9 @@
     PENDING: { label: "Chờ xử lý", cls: "neutral", icon: "clock", progress: false },
     SCRIPTING: { label: "Đang sinh kịch bản", cls: "info", icon: "spinner", progress: true, step: "sinh kịch bản" },
     SCRIPT_READY: { label: "Chờ duyệt", cls: "warning", icon: "alert", progress: false },
+    SHOT_PLAN_READY: { label: "Duyệt Shot Plan", cls: "warning", icon: "alert", progress: false },
+    GENERATING_KEYFRAMES: { label: "Đang sinh keyframe", cls: "progress", icon: "spinner", progress: true, step: "sinh keyframe" },
+    KEYFRAMES_REVIEW: { label: "Duyệt keyframe", cls: "warning", icon: "alert", progress: false },
     APPROVED: { label: "Đã duyệt", cls: "info", icon: "check", progress: false },
     GENERATING_AUDIO: { label: "Đang tạo giọng đọc", cls: "progress", icon: "spinner", progress: true, step: "tạo giọng đọc (TTS)" },
     GENERATING_IMAGES: { label: "Đang tạo ảnh AI", cls: "progress", icon: "spinner", progress: true, step: "tạo ảnh minh hoạ" },
@@ -149,6 +152,9 @@
   const advancedToggle = document.getElementById("advancedToggle");
   const advancedOptions = document.getElementById("advancedOptions");
   const sourceContentInput = document.getElementById("sourceContentInput");
+  const creationModeInput = document.getElementById("creationModeInput");
+  const directorPromptField = document.getElementById("directorPromptField");
+  const directorPromptInput = document.getElementById("directorPromptInput");
   const initialScriptInput = document.getElementById("initialScriptInput");
   const durationInput = document.getElementById("durationInput");
   const languageInput = document.getElementById("languageInput");
@@ -161,6 +167,8 @@
   const initialImagePreview = document.getElementById("initialImagePreview");
   const imageAgentInput = document.getElementById("imageAgentInput");
   const characterInput = document.getElementById("characterInput");
+  const supportingCastList = document.getElementById("supportingCastList");
+  const addSupportingCharacterBtn = document.getElementById("addSupportingCharacterBtn");
   const imageCountInput = document.getElementById("imageCountInput");
   const imageStyleInput = document.getElementById("imageStyleInput");
   const imageMoodInput = document.getElementById("imageMoodInput");
@@ -183,7 +191,6 @@
   const cinemaFrame = document.getElementById("cinemaFrame");
   const drawerProgressBox = document.getElementById("drawerProgressBox");
   const drawerProgressStep = document.getElementById("drawerProgressStep");
-  const drawerProgressEta = document.getElementById("drawerProgressEta");
   const scriptTextarea = document.getElementById("scriptTextarea");
   const scriptHint = document.getElementById("scriptHint");
   const drawerActions = document.getElementById("drawerActions");
@@ -191,6 +198,10 @@
   const backgroundImageInput = document.getElementById("backgroundImageInput");
   const uploadBackgroundBtn = document.getElementById("uploadBackgroundBtn");
   const backgroundPreviewGrid = document.getElementById("backgroundPreviewGrid");
+  const shotPlanSection = document.getElementById("shotPlanSection");
+  const shotPlanGrid = document.getElementById("shotPlanGrid");
+  const shotApprovalSummary = document.getElementById("shotApprovalSummary");
+  const shotPlanActions = document.getElementById("shotPlanActions");
 
   const reproduceOptionsSection = document.getElementById("reproduceOptionsSection");
   const reproLanguageInput = document.getElementById("reproLanguageInput");
@@ -254,6 +265,9 @@
       const prevRepro = reproCharacterInput.value;
       characterInput.innerHTML = options;
       reproCharacterInput.innerHTML = options;
+      const optionalCast = `<option value="">AI tự tạo theo prompt</option>` +
+        characters.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+      supportingCastList.querySelectorAll("select").forEach((select) => fillSupportingCharacterSelect(select));
       if (characters.some((c) => String(c.id) === prevCreate)) characterInput.value = prevCreate;
       if (characters.some((c) => String(c.id) === prevRepro)) reproCharacterInput.value = prevRepro;
     } catch (err) {
@@ -273,17 +287,45 @@
   }
   reproLanguageInput.addEventListener("change", refreshReproVoiceOptions);
 
+  function refreshCreationMode() {
+    const storyboard = creationModeInput.value === "storyboard_animatic";
+    directorPromptField.hidden = !storyboard;
+    document.querySelectorAll(".storyboard-cast-field").forEach((field) => { field.hidden = !storyboard; });
+    if (storyboard) {
+      imageAgentInput.value = "mcp";
+      if (!Number(imageCountInput.value)) imageCountInput.value = "12";
+      imageStyleInput.value = "anime sakuga animatic";
+      sceneMotionInput.value = "anime_sakuga";
+    }
+  }
+  creationModeInput.addEventListener("change", refreshCreationMode);
+
+  function fillSupportingCharacterSelect(select) {
+    const current = select.value;
+    select.innerHTML = `<option value="">Chọn từ thư viện</option>` +
+      characters.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  }
+
+  function addSupportingCharacter() {
+    const row = document.createElement("div");
+    row.className = "supporting-cast-row";
+    row.innerHTML = `<select aria-label="Nhân vật phụ"></select><button type="button" class="btn btn--secondary">Xoá</button>`;
+    fillSupportingCharacterSelect(row.querySelector("select"));
+    row.querySelector("button").addEventListener("click", () => row.remove());
+    supportingCastList.append(row);
+  }
+  addSupportingCharacterBtn.addEventListener("click", addSupportingCharacter);
+
   imageStyleInput.addEventListener("change", () => {
     if (imageStyleInput.value === "anime sakuga animatic") {
       sceneMotionInput.value = "anime_sakuga";
-      imageCountInput.value = "12";
     }
   });
 
   reproImageStyleInput.addEventListener("change", () => {
     if (reproImageStyleInput.value === "anime sakuga animatic") {
       reproSceneMotionInput.value = "anime_sakuga";
-      reproImageCountInput.value = "12";
     }
   });
 
@@ -298,7 +340,7 @@
     reproAspectRatioInput.value = job.aspectRatio || "16:9";
     reproSceneMotionInput.value = [...reproSceneMotionInput.options].some((option) => option.value === job.sceneMotion)
       ? job.sceneMotion : "none";
-    reproImageAgentInput.value = job.imageAgent || "none";
+    reproImageAgentInput.value = job.imageAgent || "mcp";
     reproCharacterInput.value = job.characterId ? String(job.characterId) : "";
     reproImageCountInput.value = job.imageCount || 6;
     const parsedStyle = parseImageStyle(job.imageStyle);
@@ -325,33 +367,6 @@
     if (diffHour < 24) return `${diffHour} giờ trước`;
     const diffDay = Math.round(diffHour / 24);
     return `${diffDay} ngày trước`;
-  }
-
-  function estimateRemainingSeconds(job) {
-    if (!["GENERATING_IMAGES", "RENDERING"].includes(job.status)) return null;
-    const elapsed = Math.max(0, (Date.now() - new Date(job.updatedAt).getTime()) / 1000);
-    let expected;
-    if (job.status === "GENERATING_IMAGES") {
-      const perImage = job.imageAgent === "mcp" ? 55 : 35;
-      expected = 20 + Math.max(1, job.imageCount || 6) * perImage;
-    } else {
-      const duration = Math.max(15, job.targetDurationSeconds || 60);
-      const motionFactor = String(job.sceneMotion || "").startsWith("anime_") ? 0.9 : 0.5;
-      expected = 15 + duration * motionFactor + Math.max(1, job.imageCount || 6) * 2;
-    }
-    return Math.max(0, Math.round(expected - elapsed));
-  }
-
-  function etaLabel(job, compact = false) {
-    const seconds = estimateRemainingSeconds(job);
-    if (seconds == null) return "";
-    if (seconds <= 0) return compact ? "Sắp xong" : "Ước tính: sắp hoàn thành";
-    const minutes = Math.floor(seconds / 60);
-    const remainder = seconds % 60;
-    const duration = minutes > 0
-      ? `${minutes} phút${remainder ? ` ${remainder} giây` : ""}`
-      : `${remainder} giây`;
-    return compact ? `Còn khoảng ${duration}` : `Ước tính còn khoảng ${duration}`;
   }
 
   function escapeHtml(str) {
@@ -407,7 +422,6 @@
             </div>
             <div class="job-card__side">
               ${badgeHtml(job.status)}
-              ${etaLabel(job, true) ? `<small class="job-card__eta">${escapeHtml(etaLabel(job, true))}</small>` : ""}
             </div>
           </button>
         </li>`;
@@ -498,9 +512,11 @@
     drawerProgressBox.hidden = !meta.progress;
     if (meta.progress) {
       drawerProgressStep.textContent = meta.step;
-      drawerProgressEta.textContent = etaLabel(job);
-      drawerProgressEta.hidden = !drawerProgressEta.textContent;
     }
+
+    const storyboardJob = job.creationMode === "storyboard_animatic";
+    shotPlanSection.hidden = !storyboardJob || !["SHOT_PLAN_READY", "GENERATING_KEYFRAMES", "KEYFRAMES_REVIEW"].includes(job.status);
+    if (!shotPlanSection.hidden) loadShotPlan(job);
 
     if (!scriptDirty) {
       scriptTextarea.value = job.scriptContent || "";
@@ -583,6 +599,8 @@
       const formData = new FormData();
       formData.append("topic", topicInput.value.trim());
       formData.append("sourceContent", sourceContentInput.value.trim());
+      formData.append("creationMode", creationModeInput.value);
+      formData.append("directorPrompt", directorPromptInput.value.trim());
       formData.append("scriptContent", initialScriptInput.value.trim());
       if (durationInput.value) formData.append("targetDurationSeconds", durationInput.value);
       formData.append("voice", voiceInput.value);
@@ -593,6 +611,9 @@
       formData.append("sceneMotion", sceneMotionInput.value);
       formData.append("imageAgent", imageAgentInput.value);
       if (characterInput.value) formData.append("characterId", characterInput.value);
+      supportingCastList.querySelectorAll("select").forEach((select) => {
+        if (select.value) formData.append("castCharacterIds", select.value);
+      });
       formData.append("imageCount", imageCountInput.value);
       formData.append("imageStyle", composeImageStyle(imageStyleInput, imageMoodInput));
       formData.append("musicVolumePercent", musicVolumeInput.value);
@@ -602,6 +623,7 @@
       const created = await apiFetch("", { method: "POST", headers: {}, body: formData });
       createForm.reset();
       imageAgentInput.value = "mcp";
+      refreshCreationMode();
       refreshVoiceOptions();
       initialImagePreview.innerHTML = "";
       showToast(hadScript ? "Đã tạo job, kịch bản sẵn sàng duyệt" : "Đã tạo job, đang sinh kịch bản…", "success");
@@ -726,6 +748,97 @@
     }
   }
 
+  async function loadShotPlan(job) {
+    try {
+      const shots = await apiFetch(`/${job.id}/shots`, { method: "GET" });
+      const approved = shots.filter((shot) => shot.approved).length;
+      shotApprovalSummary.textContent = `${approved}/${shots.length} keyframe đã duyệt`;
+      shotPlanGrid.innerHTML = shots.map((shot) => `
+        <article class="shot-card" data-shot="${shot.shotNumber}">
+          <div class="shot-card__preview">${shot.imageUrl
+            ? `<img src="${shot.imageUrl}?v=${encodeURIComponent(job.updatedAt)}" alt="${shot.title}">`
+            : `<span>${shot.title}</span>`}</div>
+          <div class="shot-card__body">
+            <strong>${shot.title} · ${escapeHtml(shot.camera || "")}</strong>
+            <textarea class="shot-narration" rows="2">${escapeHtml(shot.narration || "")}</textarea>
+            <textarea class="shot-prompt" rows="4">${escapeHtml(shot.visualPrompt || "")}</textarea>
+            <div class="shot-card__actions">
+              <button type="button" class="btn btn--secondary shot-save">Lưu cảnh</button>
+              ${job.status === "KEYFRAMES_REVIEW" ? `<button type="button" class="btn btn--secondary shot-regenerate-seed">Tạo lại · seed mới</button>
+              <button type="button" class="btn btn--secondary shot-regenerate-prompt">Lưu prompt & tạo lại</button>` : ""}
+              <label class="btn btn--secondary">Thay ảnh<input class="shot-upload" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+              ${shot.imageUrl ? `<button type="button" class="btn ${shot.approved ? "btn--primary" : "btn--secondary"} shot-approve">${shot.approved ? "Đã duyệt" : "Duyệt ảnh"}</button>` : ""}
+            </div>
+          </div>
+        </article>`).join("");
+      bindShotActions(job, shots);
+      shotPlanActions.innerHTML = job.status === "SHOT_PLAN_READY"
+        ? `<button type="button" class="btn btn--primary" id="generateKeyframesBtn">Duyệt Shot Plan & sinh ${shots.length} ảnh</button>`
+        : job.status === "KEYFRAMES_REVIEW"
+          ? `<button type="button" class="btn btn--primary" id="renderApprovedShotsBtn" ${approved !== shots.length ? "disabled" : ""}>Render ${shots.length} cảnh đã duyệt</button>` : "";
+      document.getElementById("generateKeyframesBtn")?.addEventListener("click", () => approveShotPlan(job.id));
+      document.getElementById("renderApprovedShotsBtn")?.addEventListener("click", () => renderApprovedShots(job.id));
+    } catch (error) {
+      shotApprovalSummary.textContent = error.message;
+    }
+  }
+
+  function bindShotActions(job, shots) {
+    shotPlanGrid.querySelectorAll(".shot-card").forEach((card) => {
+      const number = Number(card.dataset.shot);
+      const shot = shots.find((item) => item.shotNumber === number);
+      card.querySelector(".shot-save")?.addEventListener("click", async () => {
+        await apiFetch(`/${job.id}/shots/${number}`, { method: "PUT", body: JSON.stringify({
+          narration: card.querySelector(".shot-narration").value,
+          visualPrompt: card.querySelector(".shot-prompt").value,
+          camera: shot.camera,
+          durationSeconds: shot.durationSeconds,
+        }) });
+        showToast(`Đã lưu P${String(number).padStart(2, "0")}`, "success");
+      });
+      card.querySelector(".shot-approve")?.addEventListener("click", async () => {
+        await apiFetch(`/${job.id}/shots/${number}/approval?approved=${!shot.approved}`, { method: "POST" });
+        await loadShotPlan(job);
+      });
+      const regenerate = async (newSeed) => {
+        const buttons = card.querySelectorAll("button"); buttons.forEach((button) => { button.disabled = true; });
+        try {
+          await apiFetch(`/${job.id}/shots/${number}/regenerate?newSeed=${newSeed}`, {
+            method: "POST", body: JSON.stringify({
+              narration: card.querySelector(".shot-narration").value,
+              visualPrompt: card.querySelector(".shot-prompt").value,
+              camera: shot.camera,
+              durationSeconds: shot.durationSeconds,
+            })
+          });
+          showToast(`Đã tạo lại P${String(number).padStart(2, "0")}`, "success");
+          await loadShotPlan(job);
+        } catch (error) { showToast(error.message, "error"); }
+        finally { buttons.forEach((button) => { button.disabled = false; }); }
+      };
+      card.querySelector(".shot-regenerate-seed")?.addEventListener("click", () => regenerate(true));
+      card.querySelector(".shot-regenerate-prompt")?.addEventListener("click", () => regenerate(false));
+      card.querySelector(".shot-upload")?.addEventListener("change", async (event) => {
+        const file = event.target.files[0]; if (!file) return;
+        const data = new FormData(); data.append("file", file);
+        await apiFetch(`/${job.id}/shots/${number}/image`, { method: "POST", headers: {}, body: data });
+        await loadShotPlan(job);
+      });
+    });
+  }
+
+  async function approveShotPlan(jobId) {
+    await apiFetch(`/${jobId}/shots/approve-plan`, { method: "POST" });
+    showToast("Đang sinh các keyframe…", "success");
+    await fetchJobs(true);
+  }
+
+  async function renderApprovedShots(jobId) {
+    await apiFetch(`/${jobId}/shots/render`, { method: "POST" });
+    showToast("Đang tạo lời đọc và render animatic…", "success");
+    await fetchJobs(true);
+  }
+
   backgroundImageInput.addEventListener("change", () => {
     const files = Array.from(backgroundImageInput.files);
     backgroundPreviewGrid.innerHTML = files
@@ -750,7 +863,7 @@
 
   createForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    const hasInput = topicInput.value.trim() || sourceContentInput.value.trim() ||
+    const hasInput = topicInput.value.trim() || sourceContentInput.value.trim() || directorPromptInput.value.trim() ||
       initialScriptInput.value.trim() || initialImagesInput.files.length;
     if (!hasInput) {
       createJobError.textContent = "Nhập chủ đề, nội dung, kịch bản hoặc chọn ít nhất một ảnh";
@@ -767,10 +880,11 @@
     try {
       const data = await apiFetch(`?page=${currentPage}&size=${PAGE_SIZE}`, { method: "GET" });
       const signature = JSON.stringify(data);
-      const hasTimedStage = jobs.some((job) => ["GENERATING_IMAGES", "RENDERING"].includes(job.status));
-      if (!force && signature === jobsSignature && !hasTimedStage) return;
+      const newJobs = data.content;
+      if (!force && signature === jobsSignature) return;
+      
       jobsSignature = signature;
-      jobs = data.content;
+      jobs = newJobs;
       totalPages = Math.max(1, data.totalPages);
       totalElements = data.totalElements;
       if (currentPage > 0 && jobs.length === 0 && currentPage >= totalPages) {

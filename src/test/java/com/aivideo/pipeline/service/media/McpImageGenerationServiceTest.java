@@ -7,6 +7,8 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.web.client.RestClient;
+import com.aivideo.pipeline.repository.VideoJobRepository;
+import com.aivideo.pipeline.repository.CharacterRepository;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -16,6 +18,7 @@ import java.nio.file.Path;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class McpImageGenerationServiceTest {
     @TempDir Path tempDir;
@@ -31,7 +34,8 @@ class McpImageGenerationServiceTest {
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/mcp";
             McpImageGenerationService service = new McpImageGenerationService(
-                    mapper, RestClient.builder(), tempDir.toString(), url, "generate_image", "", false, 10);
+                    mapper, RestClient.builder(), mock(VideoJobRepository.class), mock(CharacterRepository.class),
+                    tempDir.toString(), url, "generate_image", "", false, 10);
 
             service.generateImages("Test topic", "A short scene.", 1, 42L, "cinematic", "16:9", null);
 

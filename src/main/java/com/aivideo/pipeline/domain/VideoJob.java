@@ -35,6 +35,19 @@ public class VideoJob {
     /** Nhân vật được chọn từ thư viện (bảng characters), có thể null nếu không dùng. */
     private Long characterId;
 
+    @Column(length = 30)
+    private String creationMode = "standard";
+
+    @Column(columnDefinition = "TEXT")
+    private String directorPrompt;
+
+    private Long characterC2Id;
+    private Long characterC3Id;
+    private Long characterC4Id;
+
+    @Column(columnDefinition = "TEXT")
+    private String castDescription;
+
     /** Snapshot mô tả nhân vật tại thời điểm chọn - chèn vào mọi prompt sinh ảnh
      * và prompt sinh kịch bản để nhân vật xuất hiện nhất quán. Copy từ Character
      * thay vì tham chiếu trực tiếp, để sửa nhân vật trong thư viện sau này không

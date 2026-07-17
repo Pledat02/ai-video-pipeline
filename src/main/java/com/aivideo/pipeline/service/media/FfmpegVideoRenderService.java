@@ -81,11 +81,12 @@ public class FfmpegVideoRenderService implements VideoRenderService {
                 double audioDuration = probeAudioDurationSeconds(audioPath);
                 boolean animeMotion = options.sceneMotion() != null && options.sceneMotion().startsWith("anime_");
                 double transitionDuration = animeMotion && images.size() > 1 ? 0.12 : 0.0;
-                double perImageDuration = (audioDuration + transitionDuration * (images.size() - 1)) / images.size();
-                String perImageDurationStr = String.format(Locale.ROOT, "%.3f", perImageDuration);
+                List<Double> shotDurations = normalizedShotDurations(options.shotDurations(), images.size(),
+                        audioDuration + transitionDuration * (images.size() - 1));
 
-                for (Path image : images) {
-                    command.addAll(List.of("-loop", "1", "-t", perImageDurationStr, "-i", image.toString()));
+                for (int i = 0; i < images.size(); i++) {
+                    command.addAll(List.of("-loop", "1", "-t", String.format(Locale.ROOT, "%.3f", shotDurations.get(i)),
+                            "-i", images.get(i).toString()));
                 }
                 int audioInputIndex = images.size();
                 command.addAll(List.of("-i", audioPath.toString()));
@@ -94,7 +95,7 @@ public class FfmpegVideoRenderService implements VideoRenderService {
 
                 command.add("-filter_complex");
                 String filters = buildSlideshowFilterComplex(images.size(), hasSubtitle, subtitleFile,
-                        outputResolution, options.sceneMotion(), perImageDuration, transitionDuration);
+                        outputResolution, options.sceneMotion(), shotDurations, transitionDuration);
                 if (hasMusic) filters += ";" + audioMixFilter(audioInputIndex, musicInputIndex, options.musicVolumePercent());
                 command.add(filters);
                 command.addAll(List.of("-map", "[outv]", "-map", hasMusic ? "[outa]" : audioInputIndex + ":a"));
@@ -142,10 +143,10 @@ public class FfmpegVideoRenderService implements VideoRenderService {
      * với tổng duration khai báo - sai lệch không dự đoán được).
      */
     private String buildSlideshowFilterComplex(int imageCount, boolean hasSubtitle, Path subtitleFile,
-            String outputResolution, String sceneMotion, double shotDuration, double transitionDuration) {
+            String outputResolution, String sceneMotion, List<Double> shotDurations, double transitionDuration) {
         if (sceneMotion != null && sceneMotion.startsWith("anime_")) {
             return buildAnimeFilterComplex(imageCount, hasSubtitle, subtitleFile, outputResolution,
-                    sceneMotion, shotDuration, transitionDuration);
+                    sceneMotion, shotDurations, transitionDuration);
         }
         boolean kenBurns = "kenburns".equals(sceneMotion);
         String[] dims = outputResolution.split("x");
@@ -174,11 +175,12 @@ public class FfmpegVideoRenderService implements VideoRenderService {
      * orbital drift and snap zoom, joined by very short cinematic transitions.
      */
     private String buildAnimeFilterComplex(int imageCount, boolean hasSubtitle, Path subtitleFile,
-            String outputResolution, String mode, double shotDuration, double transitionDuration) {
+            String outputResolution, String mode, List<Double> shotDurations, double transitionDuration) {
         String[] dims = outputResolution.split("x");
-        int frames = Math.max(1, (int) Math.ceil(shotDuration * 25));
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < imageCount; i++) {
+            double shotDuration = shotDurations.get(i);
+            int frames = Math.max(1, (int) Math.ceil(shotDuration * 25));
             boolean impact = "anime_impact".equals(mode) || ("anime_sakuga".equals(mode) && (i == 6 || i == 10));
             boolean tracking = "anime_tracking".equals(mode) || ("anime_sakuga".equals(mode) && i % 4 != 0);
             double zoomStep = impact ? 0.0028 : tracking ? 0.0012 : 0.0018;
@@ -204,11 +206,12 @@ public class FfmpegVideoRenderService implements VideoRenderService {
         } else {
             String[] sakugaTransitions = {"smoothleft", "fade", "wipeleft", "circleopen", "fade", "zoomin"};
             String previous = "v0";
+            double offset = 0;
             for (int i = 1; i < imageCount; i++) {
                 String output = "x" + i;
                 String transition = "anime_impact".equals(mode) ? "fade"
                         : sakugaTransitions[(i - 1) % sakugaTransitions.length];
-                double offset = i * (shotDuration - transitionDuration);
+                offset += shotDurations.get(i - 1) - transitionDuration;
                 sb.append("[").append(previous).append("][v").append(i).append("]xfade=transition=")
                         .append(transition).append(":duration=")
                         .append(String.format(Locale.ROOT, "%.3f", transitionDuration)).append(":offset=")
@@ -224,6 +227,15 @@ public class FfmpegVideoRenderService implements VideoRenderService {
             sb.append(";[animev]null[outv]");
         }
         return sb.toString();
+    }
+
+    private List<Double> normalizedShotDurations(List<Double> requested, int count, double targetTotal) {
+        if (requested == null || requested.size() != count || requested.stream().anyMatch(value -> value == null || value <= 0)) {
+            return java.util.Collections.nCopies(count, targetTotal / count);
+        }
+        double sum = requested.stream().mapToDouble(Double::doubleValue).sum();
+        double factor = targetTotal / sum;
+        return requested.stream().map(value -> Math.max(0.6, value * factor)).toList();
     }
 
     private String audioMixFilter(int voiceIndex, int musicIndex, int volumePercent) {

@@ -20,4 +20,13 @@ public class ImageAgentRouter {
                 .orElseThrow(() -> new IllegalStateException("Image agent chưa được hỗ trợ: " + provider));
         service.generateImages(topic, script, count, jobId, imageStyle, aspectRatio, characterDescription);
     }
+
+    public void generateSingle(String provider, String topic, String visualPrompt, Long jobId, int outputIndex,
+            String imageStyle, String aspectRatio, String characterDescription, long seed) {
+        ImageGenerationService service = providers.stream()
+                .filter(candidate -> candidate.provider().equalsIgnoreCase(provider))
+                .findFirst().orElseThrow(() -> new IllegalStateException("Image agent chưa được hỗ trợ: " + provider));
+        service.generateSingleImage(topic, visualPrompt, jobId, outputIndex, imageStyle, aspectRatio,
+                characterDescription, seed);
+    }
 }

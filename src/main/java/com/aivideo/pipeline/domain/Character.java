@@ -33,6 +33,18 @@ public class Character {
     @Column(length = 10)
     private String imageExt;
 
+    @Column(length = 10)
+    private String faceImageExt;
+
+    @Column(length = 10)
+    private String fullBodyImageExt;
+
+    @Column(length = 10)
+    private String outfitImageExt;
+
+    @Column(length = 10)
+    private String storyboardImageExt;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 

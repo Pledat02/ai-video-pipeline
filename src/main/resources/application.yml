@@ -55,6 +55,9 @@ pipeline:
       resolution: ${FFMPEG_RESOLUTION:1280x720}
       background-color: ${FFMPEG_BACKGROUND_COLOR:0x1a1a2e}
       font-size: ${FFMPEG_FONT_SIZE:28}
+  sound-effects:
+    library-dir: ${SOUND_EFFECTS_LIBRARY_DIR:./sound-effects}
+    ai-fallback-provider: ${SOUND_EFFECTS_AI_PROVIDER:none}
 
 logging:
   level:

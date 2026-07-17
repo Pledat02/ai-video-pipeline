@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Sinh giọng đọc bằng edge-tts (Microsoft Edge TTS, miễn phí, giọng Việt tự nhiên).
@@ -46,10 +47,11 @@ public class EdgeTtsTextToSpeechService implements TextToSpeechService {
             Path audioFile = workDir.resolve("job-" + jobId + "-audio.mp3");
             Path subtitleFile = workDir.resolve("job-" + jobId + "-subtitle.srt");
             Files.deleteIfExists(subtitleFile);
-            Files.writeString(scriptFile, script, StandardCharsets.UTF_8);
+            String spokenScript = stripSpeakerLabels(script);
+            Files.writeString(scriptFile, spokenScript, StandardCharsets.UTF_8);
 
-            List<String> command = new java.util.ArrayList<>(List.of(
-                    executable, "-f", scriptFile.toString(),
+            List<String> command = new ArrayList<>(resolveExecutableCommand());
+            command.addAll(List.of("-f", scriptFile.toString(),
                     "-v", selectedVoice == null || selectedVoice.isBlank() ? voice : selectedVoice,
                     "--rate", (ratePercent >= 0 ? "+" : "") + ratePercent + "%",
                     "--write-media", audioFile.toString()));
@@ -74,10 +76,39 @@ public class EdgeTtsTextToSpeechService implements TextToSpeechService {
             log.info("Job {} đã sinh audio tại {}", jobId, audioFile);
             return audioFile;
         } catch (IOException e) {
-            throw new UncheckedIOException("Không gọi được tiến trình edge-tts", e);
+            throw new UncheckedIOException("Không gọi được tiến trình edge-tts (cấu hình: " + executable + ")", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Bị gián đoạn khi chờ edge-tts", e);
         }
+    }
+
+    /** Giữ nhãn người nói trong bản biên tập, nhưng không để TTS đọc "RAIKU hai chấm". */
+    private String stripSpeakerLabels(String script) {
+        if (script == null) return "";
+        return script.replaceAll("(?m)^\\s*(?:\\[[^]\\r\\n]{1,60}]|[\\p{L}\\p{N}_ .'-]{1,60}:)\\s*", "")
+                .replaceAll("(?m)^[ \\t]+", "").trim();
+    }
+
+    private List<String> resolveExecutableCommand() {
+        Path configured = Path.of(executable);
+        if (configured.isAbsolute() && Files.isRegularFile(configured)) return List.of(configured.toString());
+
+        if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
+            Path roamingPython = Path.of(System.getProperty("user.home"), "AppData", "Roaming", "Python");
+            if (Files.isDirectory(roamingPython)) {
+                try (var versions = Files.list(roamingPython)) {
+                    Path found = versions
+                            .map(version -> version.resolve("Scripts").resolve("edge-tts.exe"))
+                            .filter(Files::isRegularFile)
+                            .sorted(java.util.Comparator.reverseOrder())
+                            .findFirst().orElse(null);
+                    if (found != null) return List.of(found.toString());
+                } catch (IOException ignored) {
+                    // Fall through to the configured command so ProcessBuilder reports a useful error.
+                }
+            }
+        }
+        return List.of(executable);
     }
 }

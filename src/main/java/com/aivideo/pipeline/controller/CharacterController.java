@@ -26,8 +26,13 @@ public class CharacterController {
     public CharacterResponse create(
             @RequestParam String name,
             @RequestParam(required = false) String description,
-            @RequestParam(required = false) MultipartFile image) {
-        return CharacterResponse.from(characterService.create(name, description, image));
+            @RequestParam(required = false) MultipartFile image,
+            @RequestParam(required = false) MultipartFile faceImage,
+            @RequestParam(required = false) MultipartFile fullBodyImage,
+            @RequestParam(required = false) MultipartFile outfitImage,
+            @RequestParam(required = false) MultipartFile storyboardImage) {
+        return CharacterResponse.from(characterService.create(name, description, image,
+                faceImage, fullBodyImage, outfitImage, storyboardImage));
     }
 
     @GetMapping
@@ -45,8 +50,13 @@ public class CharacterController {
             @PathVariable Long id,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String description,
-            @RequestParam(required = false) MultipartFile image) {
-        return CharacterResponse.from(characterService.update(id, name, description, image));
+            @RequestParam(required = false) MultipartFile image,
+            @RequestParam(required = false) MultipartFile faceImage,
+            @RequestParam(required = false) MultipartFile fullBodyImage,
+            @RequestParam(required = false) MultipartFile outfitImage,
+            @RequestParam(required = false) MultipartFile storyboardImage) {
+        return CharacterResponse.from(characterService.update(id, name, description, image,
+                faceImage, fullBodyImage, outfitImage, storyboardImage));
     }
 
     @DeleteMapping("/{id}")

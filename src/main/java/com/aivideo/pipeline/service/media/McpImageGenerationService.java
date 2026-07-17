@@ -2,6 +2,8 @@ package com.aivideo.pipeline.service.media;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.aivideo.pipeline.repository.VideoJobRepository;
+import com.aivideo.pipeline.repository.CharacterRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -18,9 +20,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 
 @Service
 public class McpImageGenerationService implements ImageGenerationService {
+    /** Phrased positively on purpose: a diffusion text encoder has no notion of negation, so
+     * naming the forbidden layouts ("collage", "grid", "storyboard sheet") in the positive
+     * prompt makes the model draw exactly those. At a fixed seed the previous negated wording
+     * produced a 7-panel collage where this wording produced a single clean frame. Keep the
+     * ban-list wording confined to SINGLE_FRAME_NEGATIVE below. */
+    private static final String SINGLE_FRAME_RULE = " Single full-frame cinematic still,"
+            + " one continuous camera view filling the entire frame.";
+    /** Only meaningful for MCP servers that honour negativePrompt with CFG > 1; the bundled
+     * ComfyUI bridge zeroes the negative conditioning and runs the turbo model at CFG 1, so
+     * this is inert there rather than a second line of defence. */
+    private static final String SINGLE_FRAME_NEGATIVE = "collage, grid, contact sheet, storyboard sheet,"
+            + " split screen, comic panels, multiple panels, diptych, triptych, inset frame, borders";
     private static final String PROTOCOL_VERSION = "2025-06-18";
     private static final int MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 
@@ -32,8 +49,11 @@ public class McpImageGenerationService implements ImageGenerationService {
     private final boolean allowRemote;
     private final RestClient client;
     private final AtomicLong requestIds = new AtomicLong(1);
+    private final VideoJobRepository jobRepository;
+    private final CharacterRepository characterRepository;
 
     public McpImageGenerationService(ObjectMapper objectMapper, RestClient.Builder builder,
+            VideoJobRepository jobRepository, CharacterRepository characterRepository,
             @Value("${pipeline.work-dir}") String workDir,
             @Value("${pipeline.image-generation.mcp.server-url:}") String serverUrl,
             @Value("${pipeline.image-generation.mcp.tool-name:generate_image}") String toolName,
@@ -41,6 +61,8 @@ public class McpImageGenerationService implements ImageGenerationService {
             @Value("${pipeline.image-generation.mcp.allow-remote:false}") boolean allowRemote,
             @Value("${pipeline.image-generation.mcp.timeout-seconds:180}") int timeoutSeconds) {
         this.objectMapper = objectMapper;
+        this.jobRepository = jobRepository;
+        this.characterRepository = characterRepository;
         this.workDir = Path.of(workDir);
         this.serverUrl = serverUrl;
         this.toolName = toolName;
@@ -75,20 +97,51 @@ public class McpImageGenerationService implements ImageGenerationService {
                         ? AnimeSakugaPreset.shotDirection(i, count) : "";
                 Map<String, Object> arguments = new LinkedHashMap<>();
                 arguments.put("prompt", "Create a " + imageStyle + " scene with consistent characters, no text."
-                        + characterNote + " Topic: " + topic + ". Scene: " + scene + shotDirection);
-                arguments.put("negativePrompt", "text, subtitles, watermark, logo, blurry, low quality");
+                        + SINGLE_FRAME_RULE + characterNote + " Topic: " + topic + ". Scene: " + scene + shotDirection);
+                arguments.put("negativePrompt", "text, subtitles, watermark, logo, blurry, low quality, "
+                        + SINGLE_FRAME_NEGATIVE);
                 arguments.put("width", dimensions[0]);
                 arguments.put("height", dimensions[1]);
                 arguments.put("style", imageStyle);
                 arguments.put("aspectRatio", aspectRatio);
                 arguments.put("sceneIndex", i + 1);
                 arguments.put("seed", Math.abs((jobId + ":" + (i + 1)).hashCode()));
+                addStoryboardReference(arguments, jobId, i + 1);
                 JsonNode result = rpc(endpoint, sessionId, "tools/call",
                         Map.of("name", toolName, "arguments", arguments));
                 saveImage(result, jobId, i + 1);
             }
         } catch (Exception e) {
             throw new IllegalStateException("MCP image agent thất bại: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void generateSingleImage(String topic, String visualPrompt, Long jobId, int outputIndex,
+            String imageStyle, String aspectRatio, String characterDescription, long seed) {
+        URI endpoint = validateEndpoint();
+        try {
+            Files.createDirectories(workDir);
+            String sessionId = initialize(endpoint);
+            sendInitialized(endpoint, sessionId);
+            int[] dimensions = dimensions(aspectRatio);
+            String characterNote = characterDescription == null || characterDescription.isBlank() ? ""
+                    : " Main character and cast must remain consistent: " + characterDescription + ".";
+            Map<String, Object> arguments = new LinkedHashMap<>();
+            arguments.put("prompt", "Create a " + imageStyle + " keyframe, no text." + SINGLE_FRAME_RULE
+                    + characterNote + " Topic: " + topic + ". Shot: " + visualPrompt);
+            arguments.put("negativePrompt", "text, subtitles, watermark, logo, blurry, malformed anatomy,"
+                    + " duplicate characters, " + SINGLE_FRAME_NEGATIVE);
+            arguments.put("width", dimensions[0]);
+            arguments.put("height", dimensions[1]);
+            arguments.put("seed", seed);
+            arguments.put("sceneIndex", outputIndex);
+            addStoryboardReference(arguments, jobId, outputIndex);
+            JsonNode result = rpc(endpoint, sessionId, "tools/call", Map.of("name", toolName, "arguments", arguments));
+            saveImage(result, jobId, outputIndex);
+        } catch (Exception e) {
+            throw new IllegalStateException("MCP không tạo lại được P" + String.format("%02d", outputIndex)
+                    + ": " + e.getMessage(), e);
         }
     }
 
@@ -194,5 +247,32 @@ public class McpImageGenerationService implements ImageGenerationService {
             case "4:5" -> new int[]{1024, 1280};
             default -> new int[]{1280, 720};
         };
+    }
+
+    private void addStoryboardReference(Map<String, Object> arguments, Long jobId, int shotNumber) {
+        jobRepository.findById(jobId).flatMap(job -> job.getCharacterId() == null
+                ? java.util.Optional.empty() : characterRepository.findById(job.getCharacterId())).ifPresent(character -> {
+            if (character.getStoryboardImageExt() == null) return;
+            Path file = workDir.resolve("character-" + character.getId() + "-storyboard."
+                    + character.getStoryboardImageExt());
+            if (!Files.isRegularFile(file)) return;
+            try {
+                BufferedImage sheet = ImageIO.read(file.toFile());
+                int index = Math.max(0, Math.min(11, shotNumber - 1));
+                int column = index % 4;
+                int row = index / 4;
+                int x0 = column * sheet.getWidth() / 4;
+                int y0 = row * sheet.getHeight() / 3;
+                int x1 = (column + 1) * sheet.getWidth() / 4;
+                int y1 = (row + 1) * sheet.getHeight() / 3;
+                BufferedImage panel = sheet.getSubimage(x0, y0, x1 - x0, y1 - y0);
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                ImageIO.write(panel, "png", output);
+                arguments.put("storyboardReferenceBase64", Base64.getEncoder().encodeToString(output.toByteArray()));
+                arguments.put("storyboardStrength", 0.72);
+            } catch (Exception ignored) {
+                // A broken optional storyboard must not block text-to-image fallback.
+            }
+        });
     }
 }

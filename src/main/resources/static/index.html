@@ -97,6 +97,18 @@
             </button>
             <div class="create-form__advanced" id="advancedOptions" hidden>
               <div class="create-form__field create-form__field--wide">
+                <label for="creationModeInput">Chế độ tạo video</label>
+                <select id="creationModeInput">
+                  <option value="standard">Video thông thường</option>
+                  <option value="storyboard_animatic">Sản xuất theo prompt</option>
+                </select>
+              </div>
+              <div class="create-form__field create-form__field--wide" id="directorPromptField" hidden>
+                <label for="directorPromptInput">Prompt sản xuất</label>
+                <textarea id="directorPromptInput" rows="10" placeholder="Mô tả nội dung, cảnh quay, chuyển động máy, hiệu ứng và âm thanh mong muốn..."></textarea>
+                <small>Số cảnh và nhân vật phụ được chọn linh hoạt bên dưới. Ảnh tham chiếu lấy từ hồ sơ nhân vật.</small>
+              </div>
+              <div class="create-form__field create-form__field--wide">
                 <label for="sourceContentInput">Nội dung / tư liệu nguồn</label>
                 <textarea id="sourceContentInput" rows="4" placeholder="Dán bài viết, ý chính hoặc dữ liệu để AI viết thành lời đọc..."></textarea>
               </div>
@@ -174,9 +186,14 @@
                   <option value="">Không dùng nhân vật</option>
                 </select>
               </div>
+              <div class="create-form__field create-form__field--wide storyboard-cast-field" hidden>
+                <label>Nhân vật phụ (tuỳ chọn, không giới hạn cố định)</label>
+                <div id="supportingCastList"></div>
+                <button type="button" class="btn btn--secondary" id="addSupportingCharacterBtn">+ Thêm nhân vật phụ</button>
+              </div>
               <div class="create-form__field">
-                <label for="imageCountInput">Số ảnh AI</label>
-                <input type="number" id="imageCountInput" min="1" max="12" value="6" />
+                <label for="imageCountInput">Số cảnh / keyframe</label>
+                <input type="number" id="imageCountInput" min="1" max="48" value="6" />
               </div>
               <div class="create-form__field">
                 <label for="imageStyleInput">Chất liệu hình ảnh</label>
@@ -300,7 +317,6 @@
           <span class="spinner" aria-hidden="true"></span>
           <div>
             <p>Đang xử lý ở bước <strong id="drawerProgressStep"></strong>, tự làm mới...</p>
-            <p class="drawer__progress-eta" id="drawerProgressEta"></p>
           </div>
         </div>
       </div>
@@ -308,10 +324,18 @@
       <div class="drawer__section">
         <label for="scriptTextarea" class="drawer__label">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-          Kịch bản
+          Kịch bản / hội thoại
         </label>
         <textarea id="scriptTextarea" rows="14" placeholder="Kịch bản sẽ hiện ở đây sau khi sinh xong..."></textarea>
         <p class="drawer__hint" id="scriptHint"></p>
+      </div>
+
+      <div class="drawer__section" id="shotPlanSection" hidden>
+        <label class="drawer__label">Shot Plan · P01–P12</label>
+        <p class="drawer__hint">Sửa lời đọc/prompt, thay ảnh và duyệt đủ tất cả keyframe trước khi render.</p>
+        <p class="drawer__hint" id="shotApprovalSummary"></p>
+        <div class="shot-plan-grid" id="shotPlanGrid"></div>
+        <div class="drawer__footer" id="shotPlanActions"></div>
       </div>
 
       <div class="bg-upload">
@@ -389,7 +413,7 @@
           </div>
           <div class="create-form__field">
             <label for="reproImageCountInput">Số ảnh AI</label>
-            <input type="number" id="reproImageCountInput" min="1" max="12" />
+            <input type="number" id="reproImageCountInput" min="1" max="48" />
           </div>
           <div class="create-form__field">
             <label for="reproImageStyleInput">Chất liệu hình ảnh</label>

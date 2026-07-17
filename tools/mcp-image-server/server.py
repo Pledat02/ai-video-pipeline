@@ -15,6 +15,7 @@ UNET_MODEL = os.getenv("COMFYUI_UNET_MODEL", "z_image_turbo_bf16.safetensors")
 CLIP_MODEL = os.getenv("COMFYUI_CLIP_MODEL", "qwen_3_4b.safetensors")
 VAE_MODEL = os.getenv("COMFYUI_VAE_MODEL", "ae.safetensors")
 TIMEOUT = int(os.getenv("COMFYUI_TIMEOUT_SECONDS", "180"))
+COMFYUI_INPUT_DIR = os.getenv("COMFYUI_INPUT_DIR", r"C:\Users\ADMIN\AppData\Local\Comfy-Desktop\ComfyUI-Shared\input")
 
 
 def http_json(url, method="GET", body=None):
@@ -27,11 +28,19 @@ def http_json(url, method="GET", body=None):
 
 
 def workflow(args):
-    return {
+    # Phrase this positively. The text encoder has no notion of negation, so naming the
+    # forbidden layouts ("collage", "grid", "storyboard sheet", "comic panels") here makes
+    # the model draw exactly those: at a fixed seed the negated wording produced a 7-panel
+    # collage, while this wording produced a single clean frame.
+    single_frame_rule = (
+        " Single full-frame cinematic still, one continuous camera view filling the entire frame."
+    )
+    positive_prompt = str(args.get("prompt", "")) + single_frame_rule
+    graph = {
         "28": {"class_type": "UNETLoader", "inputs": {"unet_name": UNET_MODEL, "weight_dtype": "default"}},
         "30": {"class_type": "CLIPLoader", "inputs": {"clip_name": CLIP_MODEL, "type": "lumina2", "device": "default"}},
         "29": {"class_type": "VAELoader", "inputs": {"vae_name": VAE_MODEL}},
-        "27": {"class_type": "CLIPTextEncode", "inputs": {"text": args["prompt"], "clip": ["30", 0]}},
+        "27": {"class_type": "CLIPTextEncode", "inputs": {"text": positive_prompt, "clip": ["30", 0]}},
         "33": {"class_type": "ConditioningZeroOut", "inputs": {"conditioning": ["27", 0]}},
         "13": {"class_type": "EmptySD3LatentImage", "inputs": {
             "width": int(args.get("width", 1024)), "height": int(args.get("height", 1024)), "batch_size": 1}},
@@ -43,6 +52,20 @@ def workflow(args):
         "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["29", 0]}},
         "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "ai-video-mcp", "images": ["8", 0]}},
     }
+    reference = args.get("storyboardReferenceBase64")
+    if reference:
+        os.makedirs(COMFYUI_INPUT_DIR, exist_ok=True)
+        filename = f"mcp-storyboard-{uuid.uuid4().hex}.png"
+        with open(os.path.join(COMFYUI_INPUT_DIR, filename), "wb") as handle:
+            handle.write(base64.b64decode(reference))
+        graph["40"] = {"class_type": "LoadImage", "inputs": {"image": filename}}
+        graph["41"] = {"class_type": "ImageScale", "inputs": {
+            "image": ["40", 0], "upscale_method": "lanczos", "width": int(args.get("width", 1024)),
+            "height": int(args.get("height", 1024)), "crop": "center"}}
+        graph["42"] = {"class_type": "VAEEncode", "inputs": {"pixels": ["41", 0], "vae": ["29", 0]}}
+        graph["3"]["inputs"]["latent_image"] = ["42", 0]
+        graph["3"]["inputs"]["denoise"] = float(args.get("storyboardStrength", 0.72))
+    return graph
 
 
 def generate_image(args):

@@ -6,3 +6,5 @@ pipeline-output/
 mcp-server*.log
 .vscode/
 .idea/
+__pycache__/
+*.pyc
